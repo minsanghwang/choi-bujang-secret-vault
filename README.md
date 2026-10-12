@@ -8,6 +8,7 @@
 - `api/notes.js`는 서버 함수입니다. Vercel 환경변수 `SUPABASE_URL`과 서버 전용 `SUPABASE_SECRET_KEY`로 학습용 Supabase 테이블 `defense_notes`를 읽고, `title`·`content`만 돌려줍니다. 키는 브라우저 파일·응답·로그에 나가지 않습니다.
 - `/data.json`은 메모 없이 `{"notes": []}`만 돌려줍니다. 빌드는 이 파일을 더 만들지 않고, 메모가 남아 있으면 멈춥니다.
 - 빌드(`npm run build`)는 배포의 `/aleph.json`을 계속 만듭니다. `step`은 `aleph.config.json`의 값(2)을 따릅니다.
+- `vercel.json`의 `headers`가 모든 응답에 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: no-referrer`를 붙입니다. 배포 뒤 `curl -sI https://<배포 주소>/`로 확인합니다.
 - `api/ai.js`, `api/threat-intel.js`, `src/decider.mjs`, `src/detect.mjs`는 시작 틀 그대로입니다.
 
 **다시 실행하는 방법**
