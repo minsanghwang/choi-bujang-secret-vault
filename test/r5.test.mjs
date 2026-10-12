@@ -52,10 +52,10 @@ test('step 3 identity adds public login info and keeps /aleph.json fields', () =
   assert.equal(JSON.stringify(identity).includes('secret'), false);
 });
 
-test('step 3 attack check records denials and leaves the login check unrun', async () => {
+test('step 4 attack check records denials and leaves the login checks unrun', async () => {
   const originalFetch = globalThis.fetch;
   const requested = [];
-  const step3 = { ...config, step: 3, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' } };
+  const step3 = { ...config, step: 4, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' } };
   try {
     globalThis.fetch = async (url, init) => {
       const path = new URL(url).pathname;
@@ -68,11 +68,13 @@ test('step 3 attack check records denials and leaves the login check unrun', asy
     assert.match(results[0].observed, /보이지 않음/u);
     assert.match(results[1].observed, /^비로그인 \/api\/notes 거부됨 \(HTTP 401, JSON, 메모 0건\)/u);
     assert.match(results[2].observed, /거부됨 \(HTTP 401/u);
-    assert.match(results[3].observed, /^미실행/u);
+    assert.deepEqual(results.slice(3).map(item => item.attackId),
+      ['login_a_note_crud', 'b_reads_a_note', 'b_changes_a_note']);
+    assert.ok(results.slice(3).every(item => /^미실행/u.test(item.observed)));
     globalThis.fetch = async () => new Response('<html>login</html>', { status: 200, headers: { 'content-type': 'text/html' } });
     const failed = await runAttackChecks(step3);
     assert.match(failed[1].observed, /거부되지 않음/u);
-    await assert.rejects(runAttackChecks({ ...step3, step: 2 }));
+    await assert.rejects(runAttackChecks({ ...step3, step: 3 }));
   } finally {
     globalThis.fetch = originalFetch;
   }

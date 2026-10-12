@@ -1,34 +1,33 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 3단계 「진짜 로그인을 붙입니다」
+## 현재 상태: 4단계 「로그인해도 내 자료만 보이게 합니다」
 
 **작동하는 기능**
 
-- `/`에서 Supabase Auth(이메일·비밀번호)로 **로그인·로그아웃**합니다. 로그인하지 않으면 자료를 요청하지 않고 "로그인하지 않음"과 로그인 칸만 보입니다. 실패하면 이유(예: 이메일 또는 비밀번호가 맞지 않음)가 화면에 나옵니다. 로그인하면 이메일, 로그아웃 단추, 메모 목록·추가·수정·삭제가 보입니다.
-- 화면의 Project URL과 publishable key는 공개용 값입니다. 서버 전용 키는 브라우저 파일에 없습니다. SDK는 빌드가 `public/vendor/supabase.js`로 복사해 같은 주소에서 내려줍니다(외부 CDN 없음).
-- 서버 API는 모든 요청에서 `Authorization: Bearer <토큰>`을 `src/verify-login.mjs`로 검사합니다. 토큰이 없거나 검사에 실패하면 자료를 읽지 않고 `401 {"error":"LOGIN_REQUIRED"}` JSON만 돌려줍니다. 사용자 ID는 검사를 통과한 토큰에서만 얻고, 요청 본문의 `userId`·`owner_id`·`role`은 읽지 않습니다.
-- 경로(`aleph.config.json`의 `allowedRoutes`): `GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`.
-  - `POST {id?, title, body}` → `201 {id}` (id는 UUID, 없으면 서버가 만듭니다. 저장되는 `owner_id`는 서버가 확인한 사용자 ID입니다)
-  - `GET /api/notes` → `[{id,title,body}]` (내 메모와 주인 없는 시작 가상 메모)
-  - `GET /api/notes/:id` → `{id,title,body}`, 없으면 `404 {"error":"NOT_FOUND"}`
-  - `PUT /api/notes/:id {title, body}` → 수정된 `{id,title,body}`
-  - `DELETE /api/notes/:id` → `204`. 지운 뒤 같은 id의 GET은 404
-- `/data.json`은 계속 `{"notes": []}`이고, 빌드는 `/aleph.json`을 계속 만듭니다(3단계부터 `identityProvider`와 `allowedRoutes`도 담습니다). `vercel.json`의 `headers`가 모든 응답에 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: no-referrer`를 붙입니다.
+- 로그인·로그아웃(Supabase Auth 이메일·비밀번호)과, 서버의 토큰 검사(`src/verify-login.mjs`)는 3단계 그대로입니다. 토큰이 없거나 틀리면 자료 없이 `401 {"error":"LOGIN_REQUIRED"}` JSON만 돌려줍니다.
+- **소유자 검사(4단계):** `src/notes-service.mjs`가 검증된 사용자 ID와 DB 행의 `owner_id`를 비교합니다. 읽기·수정·삭제는 기존 행을 먼저 읽어 주인을 비교하고, 주인이 다르거나 비어 있으면 `403 {"error":"FORBIDDEN"}`로 기본 거부합니다. 없는 번호는 `404 {"error":"NOT_FOUND"}`입니다.
+  - `GET /api/notes`: 내 메모만 `[{id,title,body}]`
+  - `POST /api/notes {id?, title, body}` → `201 {id}`. 저장하는 `owner_id`는 항상 서버가 확인한 사용자 ID이고, 본문·주소의 `owner_id`·`userId`는 읽지 않습니다.
+  - `GET /api/notes/:id` → `{id,title,body}` (내 것만)
+  - `PUT /api/notes/:id {title, body}` → 수정된 `{id,title,body}`. 기존 행과 새 행의 소유자가 모두 본인이어야 합니다. 본문에 다른 사람의 `owner_id`를 적으면 DB를 읽기 전에 `403 OWNER_CHANGE_FORBIDDEN`입니다. 쓰기 쿼리에도 `owner_id` 조건을 넣어, 비교 뒤 주인이 바뀌어도 남의 행은 바뀌지 않습니다.
+  - `DELETE /api/notes/:id` → `204` (내 것만). 지운 뒤 GET은 404
+- `aleph.config.json`의 `allowedRoutes`는 경로 두 개(`/api/notes`, `/api/notes/:id`)이고, 허용 방식은 위 표대로 컬렉션은 GET·POST, 한 건은 GET·PUT·DELETE입니다.
+- `/data.json`은 `{"notes": []}`이고, 빌드는 `/aleph.json`을 계속 만듭니다. 운영 배포에서는 `publicAppUrl`에 배포마다 바뀌는 미리보기 주소가 아니라 대표 주소(`VERCEL_PROJECT_PRODUCTION_URL`)를 적습니다. 미리보기 주소는 Vercel 로그인이 필요해서 심판이 열 수 없습니다. 3단계부터 `identityProvider`와 `allowedRoutes`도 담습니다. `vercel.json`의 `headers`는 모든 응답에 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: no-referrer`를 붙입니다.
 - `api/ai.js`, `api/threat-intel.js`, `src/decider.mjs`, `src/detect.mjs`, `src/verify-login.mjs`는 그대로입니다.
 
-**다시 실행하는 방법**
+**다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
 
-1. Supabase SQL Editor에서 `supabase/step2-defense-notes.sql`(Git 제외 파일)과 `supabase/step3-notes-write.sql`을 차례로 Run 합니다. 정상 결과는 `rls_enabled` true, `anon_any`·`authenticated_any` false, `service_role_insert` true입니다.
-2. Supabase → Authentication → Users에서 실습 계정 A(와 4단계용 B)를 만듭니다. 비밀번호는 직접 정하고 이 저장소나 채팅에 적지 않습니다.
-3. Vercel Environment Variables에 `SUPABASE_URL`(Project URL)과 서버 전용 `SUPABASE_SECRET_KEY`를 **직접** 입력하고 다시 배포합니다.
-4. 시험: `npm run test:r5 && npm run test:step2 && npm run test:package` (가짜 응답으로 도는 시험이며 실제 DB·배포를 증명하지 않습니다.)
-5. 시크릿 창에서 `/`를 열면 로그인 칸만 보이고 자료는 없어야 합니다. A로 로그인하면 이메일과 로그아웃 단추, 메모가 보이고, 로그아웃하면 다시 처음 화면으로 돌아옵니다.
-6. 로그인 없이 `curl -s -i https://<배포 주소>/api/notes`를 부르면 `401`과 `{"error":"LOGIN_REQUIRED"}`가 와야 합니다(빈 화면이나 HTML이 아닙니다).
+1. 3단계까지의 SQL(`supabase/step2-defense-notes.sql`(Git 제외), `supabase/step3-notes-write.sql`)과 계정 A·B, Vercel 환경변수(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)가 준비돼 있어야 합니다.
+2. `supabase/step4-owner-link.sql`(이메일이 있어 Git 제외)을 열어 A·B 이메일을 확인하고 Run 합니다. 기존 가상 메모 네 건이 A 소유가 되고, B 소유의 시험 메모 한 건이 생깁니다. **이 SQL을 실행하기 전에는 A에게도 기존 메모가 보이지 않습니다.**
+3. `supabase/step4-rls-grants.sql`을 ①②③ 블록으로 나눠 한 블록씩 Run 합니다. 적용 전후 `has_table_privilege`와 `role_table_grants`를 대조해 `anon`은 권한이 없고 `authenticated`는 SELECT·INSERT·UPDATE·DELETE 네 가지만 남는지 봅니다. 서버 API는 `service_role` 키를 쓰므로 이 SQL과 상관없이 계속 동작합니다.
+4. 시험: `npm run test:r5 && npm run test:step2 && npm run test:package` (가짜 응답과 메모리 DB로 도는 시험이며 실제 DB·배포를 증명하지 않습니다.)
+5. 브라우저 창 두 개(일반 창과 시크릿 창)로 A와 B를 각각 로그인합니다. B 창에는 A의 메모가 보이면 안 되고, A·B 모두 자기 메모를 추가·수정·삭제할 수 있어야 합니다.
+6. 로그인 없이 `curl -s -i https://<배포 주소>/api/notes`를 부르면 `401`과 `{"error":"LOGIN_REQUIRED"}`가 와야 합니다.
 
 ### 이 단계에 남은 약점
 
-- **로그인은 신원 확인일 뿐입니다.** 소유자 검사가 없어서 로그인한 B가 A의 메모를 읽고 고치고 지울 수 있습니다. 4단계에서 막습니다. 아직 막힌 것이 아니므로 실제 개인정보는 넣지 않습니다.
-- 주인 없는(`owner_id`가 비어 있는) 시작 가상 메모 네 건은 로그인한 누구에게나 보입니다.
+- 위 SQL 두 개는 제가 실행하지 않았고 사용자가 직접 실행합니다. 실행하기 전의 DB에서는 기존 메모에 주인이 없고 `authenticated`에도 3단계 이전 권한 설정이 남아 있습니다.
+- `step4-rls-grants.sql`은 제안일 뿐 적용 여부와 결과를 이 저장소가 증명하지 않습니다. 앱 API는 `service_role`로 접근하므로 RLS는 Data API 직접 접근에만 영향을 줍니다. 심판은 재현할 수 있는 `anon` 키 접근만 확인합니다.
 - 회원가입 화면은 없습니다. 계정은 Supabase 대시보드에서 만듭니다.
 - **과거 노출은 해소되지 않았습니다.** 이전 공개 Git 커밋과 옛 배포에는 가상 메모가 그대로 남아 있습니다. 이 저장소와 옛 배포가 남아 있는 한 과거에 노출된 사실은 사라지지 않습니다.
 

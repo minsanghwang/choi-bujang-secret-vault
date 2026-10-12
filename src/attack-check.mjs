@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (config.step !== 3) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (config.step !== 4) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -58,7 +58,11 @@ export async function runAttackChecks(config) {
       observed: `비로그인 /api/notes ${describe(anonymous, denied(anonymous))}` },
     { attackId: 'forged_token_notes_read', expected: '서명 없는 가짜 토큰으로 /api/notes를 부르면 401 또는 403과 JSON 오류 문구',
       observed: `가짜 토큰 /api/notes ${describe(forged, denied(forged))}` },
-    { attackId: 'login_a_note_crud', expected: '정상 A 로그인 뒤 가상 메모 추가·수정·삭제',
+    { attackId: 'login_a_note_crud', expected: '정상 A 로그인 뒤 자기 가상 메모 읽기·추가·수정·삭제',
       observed: '미실행: 이 점검은 로그인 계정 정보 없이 실행되어 A 로그인 요청을 보내지 않음' },
+    { attackId: 'b_reads_a_note', expected: 'B 로그인으로 A의 메모 번호를 요청하면 403(또는 404)이고 A의 메모가 보이지 않음',
+      observed: '미실행: 이 점검은 B 로그인 계정 정보 없이 실행되어 B 요청을 보내지 않음' },
+    { attackId: 'b_changes_a_note', expected: 'B 로그인으로 A의 메모를 수정·삭제하거나 소유자를 바꾸려 하면 거부됨',
+      observed: '미실행: 이 점검은 B 로그인 계정 정보 없이 실행되어 B 요청을 보내지 않음' },
   ];
 }

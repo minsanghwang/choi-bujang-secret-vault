@@ -100,39 +100,110 @@ test('POST에 id를 주면 그 UUID로 저장하고, 형식이 틀리면 400이�
   });
 });
 
-test('목록 GET은 로그인 사용자의 메모와 주인 없는 시작 메모를 {id,title,body}로 돌려준다', async () => {
+const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const verifyAB = async (authorization) => ({ 'Bearer a.b.c': { kind: 'student', userId: A },
+  'Bearer d.e.f': { kind: 'student', userId: B } })[authorization] ?? null;
+const asA = { authorization: 'Bearer a.b.c' };
+const asB = { authorization: 'Bearer d.e.f' };
+
+// PostgREST처럼 id·owner_id의 eq 필터만 해석하는 메모리 DB 흉내
+function memoryDb(rows = []) {
+  const db = { rows: [...rows], calls: [] };
+  db.fetch = async (url, init) => {
+    const u = new URL(url);
+    db.calls.push({ method: init.method, url: u, body: init.body ? JSON.parse(init.body) : undefined });
+    const match = row => ['id', 'owner_id'].every(k => !u.searchParams.has(k) || row[k] === u.searchParams.get(k).replace(/^eq\./u, ''));
+    const reply = (status, body) => new Response(JSON.stringify(body), { status });
+    if (init.method === 'POST') {
+      const row = { id: init.body && JSON.parse(init.body).id ? JSON.parse(init.body).id : crypto.randomUUID(), ...JSON.parse(init.body) };
+      if (db.rows.some(r => r.id === row.id)) return reply(409, {});
+      db.rows.push(row);
+      return reply(201, [row]);
+    }
+    const hit = db.rows.filter(match);
+    if (init.method === 'PATCH') hit.forEach(r => Object.assign(r, JSON.parse(init.body)));
+    if (init.method === 'DELETE') db.rows = db.rows.filter(r => !hit.includes(r));
+    return reply(200, hit.map(r => ({ ...r })));
+  };
+  return db;
+}
+
+test('목록 GET은 로그인 사용자 본인 메모만 {id,title,body}로 돌려준다', async () => {
   await withEnv(async () => {
-    const s = store([{ body: [{ id: NOTE, title: 't', content: 'b', owner_id: 'x' }] }]);
-    const res = await call(handleCollection, { headers: login }, { verify: verifyA, fetch: s.fetch });
-    assert.equal(res.status, 200);
-    assert.deepEqual(res.body, [{ id: NOTE, title: 't', body: 'b' }]);
-    assert.equal(s.calls[0].url.searchParams.get('or'), `(owner_id.eq.${A},owner_id.is.null)`);
+    const db = memoryDb([
+      { id: NOTE, owner_id: A, position: 1, title: 'a', content: 'x' },
+      { id: '22222222-2222-4222-8222-222222222222', owner_id: B, position: 1, title: 'b', content: 'y' },
+      { id: '33333333-3333-4333-8333-333333333333', owner_id: null, position: 1, title: '주인 없음', content: 'z' },
+    ]);
+    const deps = { verify: verifyAB, fetch: db.fetch };
+    const forA = await call(handleCollection, { headers: asA }, deps);
+    assert.deepEqual(forA.body, [{ id: NOTE, title: 'a', body: 'x' }]);
+    assert.equal(db.calls.at(-1).url.searchParams.get('owner_id'), `eq.${A}`);
+    assert.equal(db.calls.at(-1).url.searchParams.has('or'), false);
+    const forB = await call(handleCollection, { headers: asB }, deps);
+    assert.deepEqual(forB.body.map(n => n.title), ['b']);
   });
 });
 
-test('한 건 GET·PUT·DELETE와 지운 뒤 404', async () => {
+test('A/B 각자 자기 메모는 읽고 추가·수정·삭제하고, 상대 메모는 읽기·수정·삭제 모두 403이다', async () => {
   await withEnv(async () => {
-    const item = (method, body) => ({ method, headers: login, query: { id: NOTE }, body });
-    const s = store([
-      { body: [{ id: NOTE, title: 't', content: 'b' }] },
-      { body: [{ id: NOTE, title: 'new', content: 'text' }] },
-      { body: [{ id: NOTE }] },
-      { body: [] },
-    ]);
-    const deps = { verify: verifyA, fetch: s.fetch };
-    const got = await call(handleItem, item('GET'), deps);
-    assert.deepEqual(got.body, { id: NOTE, title: 't', body: 'b' });
-    const put = await call(handleItem, item('PUT', { title: 'new', body: 'text' }), deps);
-    assert.deepEqual(put.body, { id: NOTE, title: 'new', body: 'text' });
-    assert.deepEqual(s.calls[1].body, { title: 'new', content: 'text' });
-    const del = await call(handleItem, item('DELETE'), deps);
-    assert.equal(del.status, 204);
-    assert.equal(del.ended, true);
-    const gone = await call(handleItem, item('GET'), deps);
+    const db = memoryDb();
+    const deps = { verify: verifyAB, fetch: db.fetch };
+    const created = await call(handleCollection, { method: 'POST', headers: asA, body: { title: 'A의 글', body: 'A 내용', owner_id: B } }, deps);
+    assert.equal(created.status, 201);
+    const id = created.body.id;
+    assert.equal(db.rows[0].owner_id, A);   // 본문의 owner_id가 아니라 확인된 ID로 저장
+    const item = (headers, method = 'GET', body) => call(handleItem, { method, headers, query: { id }, body }, deps);
+
+    assert.deepEqual((await item(asA)).body, { id, title: 'A의 글', body: 'A 내용' });
+    for (const [method, body] of [['GET'], ['PUT', { title: '가로채기', body: 'x' }], ['DELETE']]) {
+      const denied = await item(asB, method, body);
+      assert.equal(denied.status, 403, method);
+      assert.deepEqual(denied.body, { error: 'FORBIDDEN' });
+    }
+    assert.deepEqual({ ...db.rows[0] }, { ...db.rows[0], title: 'A의 글', content: 'A 내용', owner_id: A });
+    assert.equal(db.calls.filter(c => ['PATCH', 'DELETE'].includes(c.method)).length, 0);   // 거부된 요청은 쓰기를 보내지 않음
+
+    const updated = await item(asA, 'PUT', { title: '새 제목', body: '새 내용' });
+    assert.deepEqual(updated.body, { id, title: '새 제목', body: '새 내용' });
+    assert.equal(db.rows[0].owner_id, A);
+    const patch = db.calls.find(c => c.method === 'PATCH');
+    assert.equal(patch.url.searchParams.get('owner_id'), `eq.${A}`);
+    assert.equal(patch.body.owner_id, A);
+
+    const bOwn = await call(handleCollection, { method: 'POST', headers: asB, body: { title: 'B의 글', body: 'B 내용' } }, deps);
+    assert.equal(bOwn.status, 201);
+    assert.equal((await call(handleCollection, { headers: asA }, deps)).body.length, 1);
+    assert.equal((await call(handleItem, { method: 'DELETE', headers: asB, query: { id: bOwn.body.id } }, deps)).status, 204);
+
+    assert.equal((await item(asA, 'DELETE')).status, 204);
+    const gone = await item(asA);
     assert.equal(gone.status, 404);
     assert.deepEqual(gone.body, { error: 'NOT_FOUND' });
-    const badId = await call(handleItem, { headers: login, query: { id: 'x' } }, deps);
-    assert.equal(badId.status, 400);
+  });
+});
+
+test('소유자를 바꾸려는 수정은 DB를 읽기 전에 403으로 거부하고, 주인 없는 행은 기본 거부한다', async () => {
+  await withEnv(async () => {
+    const orphan = '44444444-4444-4444-8444-444444444444';
+    const db = memoryDb([{ id: NOTE, owner_id: A, position: 1, title: 't', content: 'c' },
+      { id: orphan, owner_id: null, position: 1, title: 'o', content: 'c' }]);
+    const deps = { verify: verifyAB, fetch: db.fetch };
+    for (const ownerKey of ['owner_id', 'ownerId', 'userId']) {
+      const res = await call(handleItem, { method: 'PUT', headers: asA, query: { id: NOTE }, body: { title: 'x', body: 'y', [ownerKey]: B } }, deps);
+      assert.equal(res.status, 403);
+      assert.deepEqual(res.body, { error: 'OWNER_CHANGE_FORBIDDEN' });
+    }
+    assert.equal(db.calls.length, 0);
+    assert.equal(db.rows[0].owner_id, A);
+    // 본인 ID를 그대로 적은 본문은 소유자를 바꾸지 않으므로 통과합니다.
+    const same = await call(handleItem, { method: 'PUT', headers: asA, query: { id: NOTE }, body: { title: 'x', body: 'y', owner_id: A } }, deps);
+    assert.equal(same.status, 200);
+    for (const [method, body] of [['GET'], ['PUT', { title: 'x', body: 'y' }], ['DELETE']]) {
+      const res = await call(handleItem, { method, headers: asA, query: { id: orphan }, body }, deps);
+      assert.equal(res.status, 403, `주인 없는 행 ${method}`);
+    }
+    assert.equal(db.rows.length, 2);
   });
 });
 
