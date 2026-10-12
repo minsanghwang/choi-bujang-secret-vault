@@ -36,5 +36,10 @@ export function deploymentIdentity(env, config) {
     identity.identityProvider = config.identityProvider ?? null;
     identity.allowedRoutes = config.allowedRoutes ?? [];
   }
+  // 5단계부터 원본 자료 API 주소와 공개 접속 정보(공개 키만)도 알립니다. 서버 전용 키는 넣지 않습니다.
+  if (config.step >= 5) {
+    identity.originalApiUrl = config.originalApiUrl ?? null;
+    identity.database = config.database ?? null;
+  }
   return identity;
 }

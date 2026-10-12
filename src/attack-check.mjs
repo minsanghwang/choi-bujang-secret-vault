@@ -14,9 +14,9 @@ function appUrl(config) {
   return app;
 }
 
-async function send(url, authorization) {
+async function send(url, authorization, extraHeaders = {}) {
   const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000),
-    headers: authorization ? { Authorization: authorization } : {} });
+    headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
   if (/json/iu.test(contentType)) {
@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (config.step !== 4) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (config.step !== 5) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -50,6 +50,17 @@ export async function runAttackChecks(config) {
     && typeof result.data?.error === 'string';
   const describe = (result, ok) => `${ok ? '거부됨' : '거부되지 않음'} (HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}, 메모 ${noteCount(result.data)}건)`;
 
+  // 5단계: 원본 자료 저장소를 공개 키(anon)만으로 직접 불러 봅니다. 메모가 보이면 안 됩니다.
+  let direct = null;
+  const publicKey = config.database?.publishableKey;
+  if (typeof config.originalApiUrl === 'string' && config.originalApiUrl.startsWith('https://')
+      && typeof publicKey === 'string' && publicKey) {
+    direct = await send(config.originalApiUrl, null, { apikey: publicKey });
+  }
+  const directObserved = direct === null
+    ? '미실행: originalApiUrl 또는 공개 키가 설정에 없어 직접 요청을 보내지 않음'
+    : `${noteCount(direct.data) === 0 ? '메모가 보이지 않음' : '메모가 보임'} (HTTP ${direct.status}, 메모 ${noteCount(direct.data)}건)`;
+
   return [
     { attackId: 'static_data_json_read', expected: '비로그인으로 /data.json을 열어도 메모가 없어야 함',
       observed: staticLeak ? `비로그인 /data.json에서 메모가 보임 (HTTP ${staticData.status})`
@@ -58,6 +69,8 @@ export async function runAttackChecks(config) {
       observed: `비로그인 /api/notes ${describe(anonymous, denied(anonymous))}` },
     { attackId: 'forged_token_notes_read', expected: '서명 없는 가짜 토큰으로 /api/notes를 부르면 401 또는 403과 JSON 오류 문구',
       observed: `가짜 토큰 /api/notes ${describe(forged, denied(forged))}` },
+    { attackId: 'direct_original_api_anon_read', expected: '공개 키(anon)로 원본 자료 저장소를 직접 불러도 메모가 보이지 않음(401·403 또는 빈 목록)',
+      observed: directObserved },
     { attackId: 'login_a_note_crud', expected: '정상 A 로그인 뒤 자기 가상 메모 읽기·추가·수정·삭제',
       observed: '미실행: 이 점검은 로그인 계정 정보 없이 실행되어 A 로그인 요청을 보내지 않음' },
     { attackId: 'b_reads_a_note', expected: 'B 로그인으로 A의 메모 번호를 요청하면 403(또는 404)이고 A의 메모가 보이지 않음',

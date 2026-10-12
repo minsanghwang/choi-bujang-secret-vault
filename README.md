@@ -1,33 +1,30 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 4단계 「로그인해도 내 자료만 보이게 합니다」
+## 현재 상태: 5단계 「자료 요청을 서버 한곳으로 모읍니다」
 
 **작동하는 기능**
 
-- 로그인·로그아웃(Supabase Auth 이메일·비밀번호)과, 서버의 토큰 검사(`src/verify-login.mjs`)는 3단계 그대로입니다. 토큰이 없거나 틀리면 자료 없이 `401 {"error":"LOGIN_REQUIRED"}` JSON만 돌려줍니다.
-- **소유자 검사(4단계):** `src/notes-service.mjs`가 검증된 사용자 ID와 DB 행의 `owner_id`를 비교합니다. 읽기·수정·삭제는 기존 행을 먼저 읽어 주인을 비교하고, 주인이 다르거나 비어 있으면 `403 {"error":"FORBIDDEN"}`로 기본 거부합니다. 없는 번호는 `404 {"error":"NOT_FOUND"}`입니다.
-  - `GET /api/notes`: 내 메모만 `[{id,title,body}]`
-  - `POST /api/notes {id?, title, body}` → `201 {id}`. 저장하는 `owner_id`는 항상 서버가 확인한 사용자 ID이고, 본문·주소의 `owner_id`·`userId`는 읽지 않습니다.
-  - `GET /api/notes/:id` → `{id,title,body}` (내 것만)
-  - `PUT /api/notes/:id {title, body}` → 수정된 `{id,title,body}`. 기존 행과 새 행의 소유자가 모두 본인이어야 합니다. 본문에 다른 사람의 `owner_id`를 적으면 DB를 읽기 전에 `403 OWNER_CHANGE_FORBIDDEN`입니다. 쓰기 쿼리에도 `owner_id` 조건을 넣어, 비교 뒤 주인이 바뀌어도 남의 행은 바뀌지 않습니다.
-  - `DELETE /api/notes/:id` → `204` (내 것만). 지운 뒤 GET은 404
-- `aleph.config.json`의 `allowedRoutes`는 경로 두 개(`/api/notes`, `/api/notes/:id`)이고, 허용 방식은 위 표대로 컬렉션은 GET·POST, 한 건은 GET·PUT·DELETE입니다.
-- `/data.json`은 `{"notes": []}`이고, 빌드는 `/aleph.json`을 계속 만듭니다. 운영 배포에서는 `publicAppUrl`에 배포마다 바뀌는 미리보기 주소가 아니라 대표 주소(`VERCEL_PROJECT_PRODUCTION_URL`)를 적습니다. 미리보기 주소는 Vercel 로그인이 필요해서 심판이 열 수 없습니다. 3단계부터 `identityProvider`와 `allowedRoutes`도 담습니다. `vercel.json`의 `headers`는 모든 응답에 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: no-referrer`를 붙입니다.
+- 브라우저의 메모 읽기·추가·수정·삭제는 모두 Vercel 서버 함수(`/api/notes`, `/api/notes/:id`)로만 갑니다. `public/index.html`이 Supabase에 직접 부르는 것은 로그인·로그아웃·세션 읽기(`client.auth.*`)뿐이고, 메모 자료를 Supabase에서 직접 읽거나 고치는 코드는 없습니다(5단계에서 확인했고 변경하지 않았습니다).
+- 서버 함수는 4단계 그대로입니다. 모든 요청의 토큰을 `src/verify-login.mjs`로 검사하고(없거나 틀리면 `401 {"error":"LOGIN_REQUIRED"}`), 검증된 사용자 ID와 행의 `owner_id`를 비교해 본인 메모만 허용합니다(남의 것·주인 없는 행 403, 없는 번호 404, 소유자 변경 시도 403). 서버는 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`(서버 전용)로 `defense_notes`를 읽고 씁니다.
+  - `GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id` (본문 `{title, body}`, 응답 `{id,title,body}`)
+- `aleph.config.json`: `step` 5, `allowedRoutes`(`/api/notes`, `/api/notes/:id`), `identityProvider`(로그인 발급자), **`originalApiUrl`**(쿼리 없는 원본 자료 HTTPS 경로 `https://…supabase.co/rest/v1/defense_notes`), `database`(공개 접속 정보: Project URL·publishable key·테이블 이름. 서버 전용 키는 없습니다). `/aleph.json`은 계속 만들어지고 5단계부터 `originalApiUrl`과 `database`도 담습니다.
+- `/data.json`은 `{"notes": []}`입니다. `vercel.json`의 `headers`가 모든 응답에 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: no-referrer`를 붙입니다. 운영 배포의 `/aleph.json`은 `publicAppUrl`에 로그인 없이 열리는 대표 주소를 적습니다.
 - `api/ai.js`, `api/threat-intel.js`, `src/decider.mjs`, `src/detect.mjs`, `src/verify-login.mjs`는 그대로입니다.
 
 **다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
 
-1. 3단계까지의 SQL(`supabase/step2-defense-notes.sql`(Git 제외), `supabase/step3-notes-write.sql`)과 계정 A·B, Vercel 환경변수(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)가 준비돼 있어야 합니다.
-2. `supabase/step4-owner-link.sql`(이메일이 있어 Git 제외)을 열어 A·B 이메일을 확인하고 Run 합니다. 기존 가상 메모 네 건이 A 소유가 되고, B 소유의 시험 메모 한 건이 생깁니다. **이 SQL을 실행하기 전에는 A에게도 기존 메모가 보이지 않습니다.**
-3. `supabase/step4-rls-grants.sql`을 ①②③ 블록으로 나눠 한 블록씩 Run 합니다. 적용 전후 `has_table_privilege`와 `role_table_grants`를 대조해 `anon`은 권한이 없고 `authenticated`는 SELECT·INSERT·UPDATE·DELETE 네 가지만 남는지 봅니다. 서버 API는 `service_role` 키를 쓰므로 이 SQL과 상관없이 계속 동작합니다.
-4. 시험: `npm run test:r5 && npm run test:step2 && npm run test:package` (가짜 응답과 메모리 DB로 도는 시험이며 실제 DB·배포를 증명하지 않습니다.)
-5. 브라우저 창 두 개(일반 창과 시크릿 창)로 A와 B를 각각 로그인합니다. B 창에는 A의 메모가 보이면 안 되고, A·B 모두 자기 메모를 추가·수정·삭제할 수 있어야 합니다.
-6. 로그인 없이 `curl -s -i https://<배포 주소>/api/notes`를 부르면 `401`과 `{"error":"LOGIN_REQUIRED"}`가 와야 합니다.
+1. 4단계까지의 준비(계정 A·B, `supabase/step4-owner-link.sql`, Vercel 환경변수 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`)가 돼 있어야 합니다. `supabase/step4-rls-grants.sql`의 ②(authenticated에 권한 부여)는 5단계와 반대이니 실행하지 마세요.
+2. `supabase/step5-revoke-direct.sql`을 ①②③ 블록으로 나눠 한 블록씩 Run 합니다. `PUBLIC`·`anon`·`authenticated`의 직접 권한을 거두고 `service_role`만 남깁니다. 적용 전후에 `has_table_privilege`와 `information_schema.role_table_grants`로 대조합니다. 정상은 `anon`과 `authenticated`가 네 가지 모두 `granted = false`이고, 두 번째 조회가 0행인 것입니다.
+3. 시험: `npm run test:r5 && npm run test:step2 && npm run test:package` (가짜 응답과 메모리 DB로 도는 시험이며 실제 DB·배포를 증명하지 않습니다.)
+4. 일반 창에서 A로 로그인해 메모 읽기·추가·수정·삭제가 되는지, 시크릿 창에서 B로 로그인했을 때 A의 메모가 보이지 않는지, 로그인 없이 `curl -s -i https://<배포 주소>/api/notes`가 `401`과 JSON 오류 문구인지 확인합니다.
+5. 공개 키로 원본 저장소를 직접 불러 봅니다(메모가 없어야 합니다). 권한을 거둔 뒤에는 `401` 또는 `403`(`permission denied`)이 옵니다.
+   `curl -s -i -H "apikey: <publishable key>" "<originalApiUrl>"`
 
 ### 이 단계에 남은 약점
 
-- 위 SQL 두 개는 제가 실행하지 않았고 사용자가 직접 실행합니다. 실행하기 전의 DB에서는 기존 메모에 주인이 없고 `authenticated`에도 3단계 이전 권한 설정이 남아 있습니다.
-- `step4-rls-grants.sql`은 제안일 뿐 적용 여부와 결과를 이 저장소가 증명하지 않습니다. 앱 API는 `service_role`로 접근하므로 RLS는 Data API 직접 접근에만 영향을 줍니다. 심판은 재현할 수 있는 `anon` 키 접근만 확인합니다.
+- `supabase/step5-revoke-direct.sql`은 제안이고, 적용 여부와 결과는 이 저장소가 증명하지 않습니다. 실행 전에는 DB의 실제 권한 상태를 `has_table_privilege`로 직접 확인해야 합니다. 원본 직접 요청은 심판이 `anon` 키로 확인하고, 로그인한 사용자 토큰으로 직접 부르는 `authenticated` 경로는 심판이 재현하지 않는 범위입니다.
+- 서버 함수 하나가 모든 메모 접근을 맡습니다. 이 함수의 로그인·소유자 검사가 깨지면 `service_role`이 RLS를 우회하므로 그대로 노출됩니다. 시험은 가짜 응답과 메모리 DB로만 했습니다.
+- 화면 코드에는 로그인용 Supabase 공개 키(`sb_publishable_…`)가 아직 들어 있습니다. 로그인까지 서버 함수로 옮기는 것은 이번에 하지 않았습니다.
 - 회원가입 화면은 없습니다. 계정은 Supabase 대시보드에서 만듭니다.
 - **과거 노출은 해소되지 않았습니다.** 이전 공개 Git 커밋과 옛 배포에는 가상 메모가 그대로 남아 있습니다. 이 저장소와 옛 배포가 남아 있는 한 과거에 노출된 사실은 사라지지 않습니다.
 

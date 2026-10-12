@@ -1,5 +1,5 @@
 {
-  "step": 4,
+  "step": 5,
   "repoUrl": "https://github.com/minsanghwang/choi-bujang-secret-vault",
   "publicAppUrl": "https://choi-bujang-secret-vault-cstp.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
@@ -13,6 +13,12 @@
     "/api/notes",
     "/api/notes/:id"
   ],
-  "originalApiUrl": null,
+  "originalApiUrl": "https://uhbltbjjnswrhmtmtofb.supabase.co/rest/v1/defense_notes",
+  "database": {
+    "schema": "aleph.defense.database.v1",
+    "url": "https://uhbltbjjnswrhmtmtofb.supabase.co",
+    "publishableKey": "sb_publishable_hc4vQDHjDDTu0fV34gNZxQ_kXEH4SGQ",
+    "table": "defense_notes"
+  },
   "restoreRoute": null
 }
