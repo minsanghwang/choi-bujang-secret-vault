@@ -7,7 +7,10 @@ export function deploymentIdentity(env, config) {
   const owner = env.VERCEL_GIT_REPO_OWNER;
   const repo = env.VERCEL_GIT_REPO_SLUG;
   const commit = env.VERCEL_GIT_COMMIT_SHA;
-  const host = env.VERCEL_URL;
+  // 운영(production) 배포는 배포마다 새로 생기는 미리보기 주소(VERCEL_URL)가 아니라
+  // 로그인 없이 열리는 대표 주소를 알립니다. 심판은 이 주소로 요청합니다.
+  const host = env.VERCEL_ENV === 'production' && env.VERCEL_PROJECT_PRODUCTION_URL
+    ? env.VERCEL_PROJECT_PRODUCTION_URL : env.VERCEL_URL;
   if (env.VERCEL_GIT_PROVIDER !== 'github' || !OWNER.test(owner || '')
       || !REPO.test(repo || '') || repo === '.' || repo === '..'
       || repo.toLowerCase().endsWith('.git') || !SHA.test(commit || '')

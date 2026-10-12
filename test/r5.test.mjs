@@ -31,6 +31,14 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
 });
 
+test('production deploys report the public production domain, previews keep their own host', () => {
+  const production = { ...env, VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'student-defense.vercel.app' };
+  assert.equal(deploymentIdentity(production, config).publicAppUrl, 'https://student-defense.vercel.app');
+  const preview = { ...production, VERCEL_ENV: 'preview' };
+  assert.equal(deploymentIdentity(preview, config).publicAppUrl, 'https://student-defense-123.vercel.app');
+  assert.throws(() => deploymentIdentity({ ...production, VERCEL_PROJECT_PRODUCTION_URL: 'evil.example.com' }, config));
+});
+
 test('step 3 identity adds public login info and keeps /aleph.json fields', () => {
   const step3 = { ...config, step: 3,
     identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated',
