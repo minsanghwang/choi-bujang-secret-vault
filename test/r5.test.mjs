@@ -71,21 +71,24 @@ test('step 5 attack check adds the direct anon request and leaves the login chec
   try {
     globalThis.fetch = async (url, init) => {
       const path = new URL(url).pathname;
-      requested.push([path, init.headers.Authorization ? 'with-token' : init.headers.apikey ? 'apikey-only' : 'no-token']);
+      requested.push([path, init.headers?.Authorization ? 'with-token' : init.headers?.apikey ? 'apikey-only' : 'no-token']);
+      if (path === '/') return new Response('<html>login</html>', { status: 200, headers: { 'content-type': 'text/html' } });
       if (path === '/rest/v1/notes') return Response.json({ message: 'permission denied' }, { status: 401 });
       if (path === '/data.json') return Response.json({ notes: [] });
       return Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 });
     };
     const results = await runAttackChecks(step3);
-    assert.deepEqual(requested, [['/data.json', 'no-token'], ['/api/notes', 'no-token'], ['/api/notes', 'with-token'], ['/rest/v1/notes', 'apikey-only']]);
+    assert.deepEqual(requested, [['/data.json', 'no-token'], ['/api/notes', 'no-token'], ['/api/notes', 'with-token'], ['/', 'no-token'], ['/rest/v1/notes', 'apikey-only']]);
     assert.match(results[0].observed, /보이지 않음/u);
     assert.match(results[1].observed, /^비로그인 \/api\/notes 거부됨 \(HTTP 401, JSON, 메모 0건\)/u);
     assert.match(results[2].observed, /거부됨 \(HTTP 401/u);
-    assert.equal(results[3].attackId, 'direct_original_api_anon_read');
-    assert.match(results[3].observed, /^메모가 보이지 않음 \(HTTP 401, 메모 0건\)/u);
-    assert.deepEqual(results.slice(4).map(item => item.attackId),
+    assert.equal(results[3].attackId, 'public_key_in_screen_code');
+    assert.match(results[3].observed, /^첫 화면에 공개 키가 보이지 않음 \(HTTP 200\)/u);
+    assert.equal(results[4].attackId, 'direct_original_api_anon_read');
+    assert.match(results[4].observed, /^메모가 보이지 않음 \(HTTP 401, 메모 0건\)/u);
+    assert.deepEqual(results.slice(5).map(item => item.attackId),
       ['login_a_note_crud', 'b_reads_a_note', 'b_changes_a_note']);
-    assert.ok(results.slice(4).every(item => /^미실행/u.test(item.observed)));
+    assert.ok(results.slice(5).every(item => /^미실행/u.test(item.observed)));
     globalThis.fetch = async () => new Response('<html>login</html>', { status: 200, headers: { 'content-type': 'text/html' } });
     const failed = await runAttackChecks(step3);
     assert.match(failed[1].observed, /거부되지 않음/u);
@@ -94,10 +97,15 @@ test('step 5 attack check adds the direct anon request and leaves the login chec
     globalThis.fetch = async (url) => (new URL(url).pathname === '/rest/v1/notes'
       ? Response.json([{ id: 'x' }]) : Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 }));
     const open = await runAttackChecks(step3);
-    assert.match(open[3].observed, /^메모가 보임/u);
+    assert.match(open[4].observed, /^메모가 보임/u);
+    // 화면에 공개 키가 보이면 그대로 기록합니다.
+    globalThis.fetch = async (url) => (new URL(url).pathname === '/'
+      ? new Response('<script>const k="sb_publishable_ABCDEFGH12345678"</script>', { status: 200 })
+      : Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 }));
+    assert.match((await runAttackChecks(step3))[3].observed, /^첫 화면에 공개 키가 보임/u);
     // 설정이 없으면 미실행으로 남깁니다.
     const none = await runAttackChecks({ ...step3, originalApiUrl: null });
-    assert.match(none[3].observed, /^미실행/u);
+    assert.match(none[4].observed, /^미실행/u);
   } finally {
     globalThis.fetch = originalFetch;
   }

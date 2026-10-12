@@ -62,13 +62,9 @@
     </section>
     <p id="logged-out-note">로그인하면 자료가 보입니다. 로그인하지 않은 방문자에게는 자료를 보내지 않습니다.</p>
   </main>
-  <script src="/vendor/supabase.js"></script>
   <script type="module">
-    // 아래 두 값은 공개용입니다(Project URL, publishable key). 서버 전용 키는 이 파일에 없습니다.
-    const SUPABASE_URL = 'https://uhbltbjjnswrhmtmtofb.supabase.co';
-    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hc4vQDHjDDTu0fV34gNZxQ_kXEH4SGQ';
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-
+    // 로그인·로그아웃·메모 요청은 모두 같은 주소의 서버 함수(/api/auth/*, /api/notes*)로 보냅니다.
+    // 이 파일에는 Supabase 주소도 키도 없고, 로그인 토큰은 브라우저 코드가 읽을 수 없는 쿠키에만 있습니다.
     const $ = id => document.getElementById(id);
     const REASONS = {
       invalid_credentials: '이메일 또는 비밀번호가 맞지 않습니다.',
@@ -76,23 +72,25 @@
       over_request_rate_limit: '시도가 너무 많습니다. 잠시 뒤 다시 해 주세요.',
       validation_failed: '이메일 형식을 확인해 주세요.',
     };
-    const reasonOf = error => REASONS[error.code] ?? `로그인하지 못했습니다: ${error.message}`;
-
-    async function token() {
-      const { data } = await client.auth.getSession();
-      return data.session?.access_token ?? null;
-    }
-    async function api(path, options = {}) {
-      const access = await token();
-      if (!access) throw new Error('로그인이 필요합니다.');
-      const response = await fetch(path, { ...options, cache: 'no-store', headers: {
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        Authorization: `Bearer ${access}` } });
-      if (response.status === 204) return null;
+    async function call(path, options = {}) {
+      const response = await fetch(path, { ...options, cache: 'no-store', credentials: 'same-origin',
+        headers: options.body ? { 'Content-Type': 'application/json' } : {} });
+      if (response.status === 204) return { status: 204, data: null };
       let data = null;
       try { data = await response.json(); } catch { /* JSON이 아닌 응답 */ }
-      if (!response.ok) throw new Error(data?.error ? `요청이 거부되었습니다 (${response.status} ${data.error})` : `요청 실패 (HTTP ${response.status})`);
-      return data;
+      return { status: response.status, data };
+    }
+    async function api(path, options = {}) {
+      let result = await call(path, options);
+      if (result.status === 401) {          // 접근 토큰이 만료됐을 수 있으니 서버에 한 번 갱신을 부탁합니다.
+        const session = await call('/api/auth/session');
+        if (session.status === 200) result = await call(path, options);
+      }
+      if (result.status === 401) { await render(null); throw new Error('로그인이 필요합니다.'); }
+      if (result.status >= 400) {
+        throw new Error(result.data?.error ? `요청이 거부되었습니다 (${result.status} ${result.data.error})` : `요청 실패 (HTTP ${result.status})`);
+      }
+      return result.data;
     }
 
     function card(note) {
@@ -140,9 +138,9 @@
     }
 
     // 로그인 상태에 따라 화면을 바꿉니다. 로그아웃하면 화면의 자료도 지웁니다.
-    async function render(session) {
-      const signedIn = Boolean(session);
-      $('status').textContent = signedIn ? `${session.user.email} 로그인됨` : '로그인하지 않음';
+    async function render(email) {
+      const signedIn = Boolean(email);
+      $('status').textContent = signedIn ? `${email} 로그인됨` : '로그인하지 않음';
       $('logout').hidden = !signedIn;
       $('login-form').hidden = signedIn;
       $('vault').hidden = !signedIn;
@@ -153,13 +151,18 @@
     $('login-form').addEventListener('submit', async event => {
       event.preventDefault();
       $('login-error').textContent = '';
-      const { error } = await client.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+      const result = await call('/api/auth/login', { method: 'POST',
+        body: JSON.stringify({ email: $('email').value.trim(), password: $('password').value }) });
       $('password').value = '';
-      if (error) $('login-error').textContent = reasonOf(error);
+      if (result.status === 200 && result.data?.email) return render(result.data.email);
+      const reason = result.data?.reason;
+      $('login-error').textContent = REASONS[reason]
+        ?? `로그인하지 못했습니다 (${result.status}${reason ? ` ${reason}` : result.data?.error ? ` ${result.data.error}` : ''})`;
     });
     $('logout').addEventListener('click', async () => {
-      const { error } = await client.auth.signOut();
-      if (error) $('login-error').textContent = `로그아웃하지 못했습니다: ${error.message}`;
+      const result = await call('/api/auth/logout', { method: 'POST' });
+      if (result.status !== 200) $('login-error').textContent = `로그아웃하지 못했습니다 (${result.status})`;
+      await render(null);
     });
     $('add-form').addEventListener('submit', async event => {
       event.preventDefault();
@@ -170,8 +173,8 @@
       } catch (error) { $('notes-error').textContent = error.message; }
     });
 
-    client.auth.onAuthStateChange((_event, session) => { setTimeout(() => render(session), 0); });
-    render((await client.auth.getSession()).data.session);
+    const session = await call('/api/auth/session');
+    await render(session.status === 200 ? session.data?.email ?? null : null);
   </script>
 </body>
 </html>

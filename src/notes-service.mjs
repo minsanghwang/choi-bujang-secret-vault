@@ -3,6 +3,7 @@
 // 4단계: 읽기·수정·삭제 전에 DB 행의 owner_id를 읽어 검증된 사용자 ID와 비교하고,
 // 주인이 다르거나 비어 있으면 기본 거부합니다. URL·본문의 owner_id·userId·role은 믿지 않습니다.
 import config from '../aleph.config.json' with { type: 'json' };
+import { isSameSite, sessionAuthorization } from './auth-service.mjs';
 import { createLoginVerifier } from './verify-login.mjs';
 
 const TABLE = 'defense_notes';
@@ -56,8 +57,14 @@ async function requireLogin(request, response, deps) {
     fail(response, 500, 'NOTES_NOT_CONFIGURED');
     return null;
   }
+  // Authorization 헤더가 있으면 그것만 검사하고, 없을 때만 서버가 심어 둔 로그인 쿠키를 씁니다.
+  const auth = sessionAuthorization(request);
+  if (auth.fromCookie && request.method !== 'GET' && !isSameSite(request)) {
+    fail(response, 403, 'CROSS_SITE_BLOCKED');
+    return null;
+  }
   let who = null;
-  try { who = await verify(request.headers?.authorization); } catch { who = null; }
+  try { who = await verify(auth.value); } catch { who = null; }
   if (!who || !UUID.test(who.userId ?? '')) {
     response.setHeader('WWW-Authenticate', 'Bearer');
     fail(response, 401, 'LOGIN_REQUIRED');

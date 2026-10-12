@@ -50,6 +50,11 @@ export async function runAttackChecks(config) {
     && typeof result.data?.error === 'string';
   const describe = (result, ok) => `${ok ? '거부됨' : '거부되지 않음'} (HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}, 메모 ${noteCount(result.data)}건)`;
 
+  // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
+  const page = await fetch(app, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+  const pageText = await page.text();
+  const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
+
   // 5단계: 원본 자료 저장소를 공개 키(anon)만으로 직접 불러 봅니다. 메모가 보이면 안 됩니다.
   let direct = null;
   const publicKey = config.database?.publishableKey;
@@ -69,6 +74,8 @@ export async function runAttackChecks(config) {
       observed: `비로그인 /api/notes ${describe(anonymous, denied(anonymous))}` },
     { attackId: 'forged_token_notes_read', expected: '서명 없는 가짜 토큰으로 /api/notes를 부르면 401 또는 403과 JSON 오류 문구',
       observed: `가짜 토큰 /api/notes ${describe(forged, denied(forged))}` },
+    { attackId: 'public_key_in_screen_code', expected: '첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 없음',
+      observed: `${keyVisible ? '첫 화면에 공개 키가 보임' : '첫 화면에 공개 키가 보이지 않음'} (HTTP ${page.status})` },
     { attackId: 'direct_original_api_anon_read', expected: '공개 키(anon)로 원본 자료 저장소를 직접 불러도 메모가 보이지 않음(401·403 또는 빈 목록)',
       observed: directObserved },
     { attackId: 'login_a_note_crud', expected: '정상 A 로그인 뒤 자기 가상 메모 읽기·추가·수정·삭제',
