@@ -5,3 +5,4 @@ bundle-notes.json
 node_modules/
 public/aleph.json
 supabase/step2-defense-notes.sql
+public/vendor/

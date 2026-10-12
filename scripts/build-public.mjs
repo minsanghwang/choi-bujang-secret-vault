@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { deploymentIdentity } from './deployment-identity.mjs';
 
@@ -15,7 +15,11 @@ try {
 if (publicData && (!Array.isArray(publicData.notes) || publicData.notes.length > 0)) {
   throw new Error('public/data.json에 메모가 남아 있습니다. 메모는 공개 파일 밖(Supabase)에 두세요.');
 }
-await mkdir(resolve(root, 'public'), { recursive: true });
+await mkdir(resolve(root, 'public', 'vendor'), { recursive: true });
+// 3단계: 로그인 화면이 쓰는 공식 Supabase SDK 브라우저 번들을 같은 주소에서 내려줍니다.
+// (package-lock.json이 고정한 버전이며, 외부 CDN을 부르지 않습니다.)
+await copyFile(resolve(root, 'node_modules', '@supabase', 'supabase-js', 'dist', 'umd', 'supabase.js'),
+  resolve(root, 'public', 'vendor', 'supabase.js'));
 console.log('공개 파일에 가상 메모가 없는 것을 확인했습니다. data.json은 복사하지 않습니다.');
 if (!process.argv.includes('--local')) {
   const identity = deploymentIdentity(process.env, config);

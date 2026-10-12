@@ -31,30 +31,40 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
 });
 
-test('step 2 attack check records the static file and the still-public function', async () => {
+test('step 3 identity adds public login info and keeps /aleph.json fields', () => {
+  const step3 = { ...config, step: 3,
+    identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated',
+      jwksUrl: 'https://p.supabase.co/auth/v1/.well-known/jwks.json' },
+    allowedRoutes: ['/api/notes', '/api/notes/:id'] };
+  const identity = deploymentIdentity(env, step3);
+  assert.equal(identity.step, 3);
+  assert.deepEqual(identity.identityProvider, step3.identityProvider);
+  assert.deepEqual(identity.allowedRoutes, step3.allowedRoutes);
+  assert.equal(identity.repoUrl, 'https://github.com/student-a/aleph-defense');
+  assert.equal(JSON.stringify(identity).includes('secret'), false);
+});
+
+test('step 3 attack check records denials and leaves the login check unrun', async () => {
   const originalFetch = globalThis.fetch;
   const requested = [];
+  const step3 = { ...config, step: 3, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' } };
   try {
     globalThis.fetch = async (url, init) => {
-      requested.push([String(url), init.redirect]);
       const path = new URL(url).pathname;
-      const body = path === '/api/notes'
-        ? { notes: [{ title: 'x', content: 'y' }, { title: 'x', content: 'y' }] }
-        : { notes: [] };
-      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      requested.push([path, init.headers.Authorization ? 'with-token' : 'no-token']);
+      if (path === '/data.json') return Response.json({ notes: [] });
+      return Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 });
     };
-    const results = await runAttackChecks(config);
-    assert.deepEqual(requested, [
-      ['https://student-defense.vercel.app/data.json', 'error'],
-      ['https://student-defense.vercel.app/api/notes', 'error'],
-    ]);
+    const results = await runAttackChecks(step3);
+    assert.deepEqual(requested, [['/data.json', 'no-token'], ['/api/notes', 'no-token'], ['/api/notes', 'with-token']]);
     assert.match(results[0].observed, /보이지 않음/u);
-    assert.match(results[1].observed, /메모 2건이 보임/u);
-    assert.doesNotMatch(JSON.stringify(results), /"content"|title/u);
-    globalThis.fetch = async () => new Response(JSON.stringify({ sampleMarker: 'SAMPLE_NOTE_1', notes: [{ title: 'x' }] }), { status: 200 });
-    const [leaked] = await runAttackChecks(config);
-    assert.match(leaked.observed, /메모가 보임/u);
-    await assert.rejects(runAttackChecks({ ...config, step: 1 }));
+    assert.match(results[1].observed, /^비로그인 \/api\/notes 거부됨 \(HTTP 401, JSON, 메모 0건\)/u);
+    assert.match(results[2].observed, /거부됨 \(HTTP 401/u);
+    assert.match(results[3].observed, /^미실행/u);
+    globalThis.fetch = async () => new Response('<html>login</html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    const failed = await runAttackChecks(step3);
+    assert.match(failed[1].observed, /거부되지 않음/u);
+    await assert.rejects(runAttackChecks({ ...step3, step: 2 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
