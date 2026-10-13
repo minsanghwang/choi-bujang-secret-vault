@@ -44,6 +44,22 @@ function zoneAllowed(request) {
   return entry.allow;
 }
 
+// 8단계 소유 기록: 요청 계약에 자료의 주인 값이 없으므로, 허용한 메모 경로를 처음 쓴 사용자(subjectId)를 기억합니다.
+// 같은 경로를 다른 사용자가 요청하면 거부합니다. 프로세스 메모리에만 있고 상한이 있으며, 최종 소유자 확인은 자료 API가 합니다.
+const MAX_OWNERS = 5000;
+const owners = new Map();
+const ownerKey = request => (typeof request.path === 'string' ? request.path.toLowerCase() : null);
+const ownerConflict = request => {
+  const owner = owners.get(ownerKey(request));
+  return owner !== undefined && owner !== request.subjectId.toLowerCase();
+};
+function rememberOwner(request) {
+  const key = ownerKey(request);
+  if (!key || owners.has(key)) return;
+  if (owners.size >= MAX_OWNERS) owners.delete(owners.keys().next().value);
+  owners.set(key, request.subjectId.toLowerCase());
+}
+
 const isCount = value => Number.isInteger(value) && value >= 0;
 
 // 값이 없거나 형식·출처가 맞지 않으면 null을 돌려줍니다. 정상값으로 채우지 않습니다.
@@ -75,7 +91,7 @@ export async function decide(request) {
   if (request?.deviceRegistered !== true) return answer('deny', 'device_not_registered', 'device_registered');
 
   // 규칙 2(8단계): 사용자·기기·동작·정확한 경로가 구역 표의 한 줄과 맞을 때만 통과합니다. 모르는 경로는 거부합니다.
-  if (!zoneAllowed(request)) return answer('deny', 'zone_not_allowed', 'zone_access');
+  if (!zoneAllowed(request) || ownerConflict(request)) return answer('deny', 'zone_not_allowed', 'zone_access');
 
   // 규칙 3(7단계): 평소와 다른 시각 + 처음 보는 네트워크 + 짧은 시간의 많은 읽기가 함께일 때만 다시 확인합니다.
   // 지역(region)은 판단에 쓰지 않고, 하나라도 빠지면(또는 출처가 불명확하면) 이 규칙은 걸리지 않습니다.
@@ -84,5 +100,6 @@ export async function decide(request) {
     && recentBurst(request) >= BURST_COUNT;
   if (unusual && !reauthenticated(request)) return answer('step_up', 'step_up_required', 'step_up_required');
 
+  rememberOwner(request);   // 허용한 메모 경로의 첫 사용자를 기록합니다.
   return { ...answer('allow', 'approved', 'device_registered') };
 }

@@ -135,3 +135,23 @@ test('사용자 ID가 붙은 경로는 요청한 본인 것만 허용한다', as
   // 사용자 표시가 없는 ID(/notes/demo 같은 연습 요청)는 이 검사로 막지 않는다.
   assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/demo'))).decision, 'allow');
 });
+
+test('같은 메모 경로를 다른 사용자가 요청하면 거부한다(소유 기록)', async () => {
+  const path = `/notes/${randomUUID()}`;
+  const ask = (method, subjectId, extra = {}) => decide(withRoute(method, `${method} /notes/:id`, path, { subjectId, ...extra }));
+  assert.equal((await ask('GET', 'subj_a')).decision, 'allow');          // A가 처음 읽음 → A의 경로로 기록
+  assert.equal((await ask('PUT', 'SUBJ_A')).decision, 'allow');          // A는 수정도 가능(대소문자 무시)
+  for (const method of ['GET', 'PUT']) {
+    const denied = await ask(method, 'subj_b');                          // B가 A의 경로를 요청
+    assert.equal(denied.decision, 'deny', method);
+    assert.equal(denied.reasonCode, 'zone_not_allowed');
+    assert.deepEqual(denied.ruleIds, ['zone_access']);
+  }
+  assert.equal((await ask('GET', 'subj_a')).decision, 'allow');          // A의 정상 요청은 유지
+  // 다른 경로는 서로 영향이 없고, 추가 확인으로 끝난 요청은 소유자로 기록되지 않는다.
+  const other = `/notes/${randomUUID()}`;
+  assert.equal((await decide(withRoute('GET', 'GET /notes/:id', other, { subjectId: 'subj_b' }))).decision, 'allow');
+  const pending = `/notes/${randomUUID()}`;
+  assert.equal((await decide(fresh(suspicious, { method: 'GET', route: 'GET /notes/:id', path: pending, subjectId: 'subj_x' }))).decision, 'step_up');
+  assert.equal((await decide(withRoute('GET', 'GET /notes/:id', pending, { subjectId: 'subj_y' }))).decision, 'allow');
+});
