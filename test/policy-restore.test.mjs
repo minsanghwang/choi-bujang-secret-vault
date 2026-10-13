@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
 import { RULE_IDS } from '../src/decider.mjs';
-import { applyRestore, diffPolicy, loadTestPolicy, loadVerified, planRestore, PolicyError } from '../src/policy-restore.mjs';
+import { applyRestore, diffPolicy, loadTestPolicy, loadVerified, planRestore, PolicyError, reloadVerified } from '../src/policy-restore.mjs';
 
 const run = promisify(execFile);
 const REPO = new URL('..', import.meta.url).pathname;
@@ -97,4 +97,14 @@ test('복원은 이전 감사 기록 뒤에 한 줄만 더하고, 차이가 없�
   const plan = planRestore(verified, current);
   assert.equal(applyRestore(verified, current, plan).audit.length, 2);
   assert.deepEqual(diffPolicy(verified.policy, current), []);
+});
+
+test('쓰기 직전에 사본을 다시 읽어 검증하고, 그 사이 바뀌었으면 중단한다', async () => {
+  const dir = await sandbox();
+  try {
+    const first = await loadVerified(dir);
+    assert.equal((await reloadVerified(dir, first)).sha256, first.sha256);                        // 그대로면 통과
+    await writeFile(join(dir, 'policy', 'verified', 'policy-v1.json'), '{"schema":"aleph.policy.v1","version":"v1","services":{}}\n');
+    await assert.rejects(reloadVerified(dir, first), /해시가 목록과 다릅니다/u);                    // 검증 뒤에 사본이 바뀜
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

@@ -263,3 +263,23 @@ test('흔적은 응답을 보내기 전에 먼저 쓴다(응답 뒤에는 서버
   await handleRestore({ method: 'POST', headers: { authorization: 'Bearer b.b.b' }, body: { id: B_NOTE } }, response, { verify, fetch: db.fetch });
   assert.deepEqual(order.slice(-2), ['trace', 'response']);
 }));
+
+test('쓰기 직전에 사본을 다시 읽고, 그 사이 사본이 바뀌었으면 쓰지 않고 멈춘다', () => withEnv({}, async () => {
+  const db = world();
+  const reads = [];
+  const base = db.fetch;
+  db.fetch = async (url, init) => {
+    if (new URL(url).pathname.endsWith('defense_notes_backup') && init.method === 'GET') {
+      reads.push(1);
+      if (reads.length === 2) db.tables.defense_notes_backup[0].content = '검증 뒤에 바뀐 사본';   // 첫 검증과 쓰기 사이에 사본이 변조됨
+    }
+    return base(url, init);
+  };
+  const live = JSON.stringify(db.tables.defense_notes.find(r => r.id === B_NOTE));
+  const res = await post(db, asB, want());
+  assert.equal(reads.length, 2);                                            // 사본을 두 번 읽음
+  assert.equal(res.status, 409);
+  assert.equal(JSON.stringify(db.tables.defense_notes.find(r => r.id === B_NOTE)), live);   // 쓰지 않음
+  assert.ok(db.calls.every(c => !(c.table === 'defense_notes' && (c.method === 'PATCH' || c.method === 'POST'))));
+  assert.deepEqual(real(db).map(r => r.reason ?? r.outcome), ['started', 'backup_reverify_failed']);
+}));

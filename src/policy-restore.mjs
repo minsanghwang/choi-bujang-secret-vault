@@ -31,6 +31,13 @@ export async function loadVerified(root, version = null) {
   return { policy, version: item.version, sha256: item.sha256, file: name };
 }
 
+// 쓰기 직전에 검증한 사본을 디스크에서 다시 읽어 다시 검증합니다. 처음 검증한 버전·해시와 다르면 PolicyError로 중단합니다.
+export async function reloadVerified(root, verified) {
+  const again = await loadVerified(root, verified.version);
+  if (again.sha256 !== verified.sha256 || again.file !== verified.file) stop('쓰기 직전에 다시 읽은 정책 사본이 처음 검증한 것과 다릅니다. 중단합니다.');
+  return again;
+}
+
 export async function loadTestPolicy(root, file = join(root, 'policy', 'test-policy.json')) {
   let policy;
   try { policy = JSON.parse(await readFile(file, 'utf8')); } catch { stop('현재 시험 정책을 읽을 수 없습니다. 중단합니다.'); }

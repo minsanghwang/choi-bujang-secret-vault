@@ -119,6 +119,15 @@ async function restoreInner(request, response, deps) {
     }
     // 쓰기 전에 감사 기록을 먼저 남깁니다. 남기지 못하면 쓰지 않습니다.
     if (!await audit(deps, caller, wanted.id, 'started', null)) return fail(response, 503, 'AUDIT_UNAVAILABLE');
+    // 쓰기 직전에 사본을 한 번 더 읽어 다시 검증합니다. 처음 검증한 사본과 달라졌거나 검증에 실패하면 쓰지 않고 멈춥니다.
+    const again = await rest(BACKUP, 'GET', {
+      select: 'backup_id,note_id,owner_id,title,content,content_sha256',
+      note_id: `eq.${wanted.id}`, owner_id: `eq.${owner}`, content_sha256: `eq.${copyHash}`, order: 'backed_up_at.asc', limit: '1' }, undefined, deps);
+    const second = again.ok && Array.isArray(again.rows) ? again.rows[0] : null;
+    const stillIntact = Boolean(second) && second.title === copy.title && second.content === copy.content
+      && String(second.note_id).toLowerCase() === wanted.id && String(second.owner_id ?? '').toLowerCase() === owner
+      && second.content_sha256 === copyHash && noteHash(second.title, second.content) === copyHash;
+    if (!stillIntact) { await audit(deps, caller, wanted.id, 'denied', 'backup_reverify_failed'); return fail(response, 409, 'BACKUP_MISMATCH', 'backup_mismatch'); }
     const write = current
       ? await rest(NOTES, 'PATCH', { id: `eq.${wanted.id}`, owner_id: `eq.${owner}` }, { title: copy.title, content: copy.content }, deps)
       : await rest(NOTES, 'POST', {}, { id: wanted.id, owner_id: owner, title: copy.title, content: copy.content,

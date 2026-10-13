@@ -3,7 +3,7 @@
 //   node scripts/policy-restore.mjs --apply --confirm <해시12자> → 보여 준 버전과 해시를 확인했을 때만 씁니다
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyRestore, describePlan, loadTestPolicy, loadVerified, planRestore, PolicyError, writePolicy } from '../src/policy-restore.mjs';
+import { applyRestore, describePlan, loadTestPolicy, loadVerified, planRestore, PolicyError, reloadVerified, writePolicy } from '../src/policy-restore.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -21,7 +21,8 @@ try {
   } else if (!plan.willChange.length) {
     process.stdout.write('바뀔 항목이 없어 쓰지 않았습니다.\n');
   } else {
-    await writePolicy(file, applyRestore(verified, current, plan));
+    const again = await reloadVerified(root, verified);   // 쓰기 직전에 사본을 다시 읽어 검증합니다. 실패하면 여기서 중단합니다.
+    await writePolicy(file, applyRestore(again, current, plan));
     process.stdout.write(`${plan.service} 서비스를 ${plan.version}으로 되돌렸습니다. 다른 서비스와 감사 이력은 보존했습니다.\n`);
   }
 } catch (error) {

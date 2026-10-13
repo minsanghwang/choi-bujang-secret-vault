@@ -13,7 +13,7 @@
 | 요청 본문 | `{ "id": "<메모 UUID>", "ownerId"?, "contentSha256"?, "dryRun"? }` — `id`만 필수(`noteId`도 같은 뜻). 다른 값(`role`, 내용 등)은 `400` |
 | 실행 전 미리보기 | 기본 동작입니다. 쓰지 않고 복원할 **사본 버전**(`backup.id`, `takenAt`, `verified`)과 **바뀔 항목**(`changes.title`·`content`·`create`, `willWrite`), 실제 복원에 보낼 확인값(`confirm`)만 돌려줍니다. 제목·내용은 담지 않습니다 |
 | 실제 복원 | `dryRun: false` **그리고** `ownerId`와 `contentSha256`을 모두 보냈을 때만 합니다. 하나라도 없으면 `400 confirmation_required`로 쓰지 않습니다 |
-| 사본 | 비공개 표 `defense_notes_backup`(서버만 읽음). 한 건만 다시 읽어 ID·소유자·내용 해시를 요청과 대조하고, 저장된 해시를 내용에서 다시 계산해 모두 맞을 때만 복원하며 하나라도 다르면 쓰지 않고 멈춥니다 |
+| 사본 | 비공개 표 `defense_notes_backup`(서버만 읽음). 한 건만 다시 읽어 ID·소유자·내용 해시를 요청과 대조하고, 저장된 해시를 내용에서 다시 계산해 모두 맞을 때만 복원하며 하나라도 다르면 쓰지 않고 멈춥니다. 감사 기록(started)을 남긴 뒤 **쓰기 직전에 사본을 한 번 더 읽어 다시 검증**하고, 달라졌으면 쓰지 않습니다(409). 정책 CLI도 쓰기 직전에 사본 파일을 다시 읽어 해시를 다시 맞춥니다 |
 | 성공 | 미리보기 `200 { applied: false, dryRun: true, … }`, 복원 `200 { applied: true, restored: true, created: false\|true, id, ownerId, contentSha256 }` (메모 제목·내용은 응답에 없음) |
 | 거부 | 로그인 없음 `401`, 형식 오류·확인값 없음 `400`, 남의 메모 `403 not_owner`, 사본 없음·해시 다름 `404`, 사본 검증 실패 `409`(쓰지 않음), 공지 번호·소유자가 다른 자리 `403` |
 | 보존 | 대상 한 건 외의 메모는 읽지도 쓰지도 지우지도 않고, 감사 표 `defense_restore_audit`은 덧붙이기만 합니다 |
