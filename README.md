@@ -32,6 +32,7 @@
 **10단계 실행 순서 (SQL은 직접 검토하고 실행합니다)**
 
 1. `supabase/step10-backup.sql`을 ①→②→③→④ 블록으로 나눠 하나씩 Run 합니다. ③이 지금의 개인 메모를 사전 백업으로 복사하고, ④가 사본을 다시 읽어 `ok_rows`가 `total`과 같은지, 두 표의 `anon`/`authenticated` 권한이 모두 `false`인지 보여 줍니다. 침해 **전**의 정상 상태에서 실행해야 의미가 있습니다.
+   - (보강) `supabase/step10-backup-trigger.sql`을 ① → ② 순서로 Run 하면, 이후 메모를 만들거나 고치거나 지우기 **직전의 값**이 `defense_notes_backup`에 자동으로 한 건씩 쌓입니다(같은 값은 한 번만). 그래서 나중에 만든 메모도 변조 전 값으로 복원할 수 있습니다. 사본을 남기지 못해도 메모 쓰기는 막지 않고 경고만 남기며, 앱 코드는 바꾸지 않습니다. 되돌리려면 파일 맨 아래 `drop trigger` 줄만 실행합니다. **아직 실행하지 않았다면 미실행입니다.**
 2. 복원 대상의 `id`(필요하면 `ownerId`·`contentSha256`도)는 시험 계정 B의 메모에 대해 SQL Editor에서 `select note_id, owner_id, content_sha256 from public.defense_notes_backup where owner_id = '<B의 사용자 UUID>';`로 확인합니다(메모 본문은 보지 않아도 됩니다).
 3. 먼저 `{ id }`만(또는 `dryRun: true`) 보내 미리보기를 보고, 응답의 `confirm` 값을 그대로 붙여 `dryRun: false`로 다시 보냅니다. 호출 예(로그인 쿠키가 있는 브라우저 콘솔): `fetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:'<UUID>', ownerId:'<B UUID>', contentSha256:'<해시>', dryRun:true})}).then(r => r.json()).then(console.log)`
    - 정상: B 계정으로 로그인한 상태에서 B의 메모만 `200`, 응답의 세 값이 요청과 같습니다.
