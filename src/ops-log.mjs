@@ -1,6 +1,6 @@
 // 12단계: 자료 API가 응답한 결과를 "가려서" 서버 표(defense_ops_log)에 남기는 감싸개입니다. 탈환 작전실의 수치는 이 기록에서만 나옵니다.
-// 남기는 것: 시각, 요청 ID, 메서드, 경로 이름(:id 형태), 응답 상태, 거부 이유 코드, 인증 방식, 사용자의 가명(해시 12자).
-// 남기지 않는 것: 사용자 ID 원문·이메일·토큰·쿠키·요청과 응답 본문·메모 제목과 내용·쿼리 문자열.
+// 남기는 것: 시각, 요청 ID, 메서드, 경로 이름(:id 형태), 응답 상태, 거부 이유 코드, 인증 방식, 사용자의 가명(해시 12자), 점검 이름(X-Attack-Id가 있을 때).
+// 남기지 않는 것: 사용자 ID 원문·이메일·토큰·쿠키·다른 헤더·User-Agent·요청과 응답 본문·메모 제목과 내용·쿼리 문자열.
 // 기록이 실패해도 원래 응답은 그대로 나갑니다(기록은 응답을 바꾸지 않고, 응답을 보내기 전에 먼저 씁니다: 서버 함수는 응답 뒤에 멈출 수 있음).
 import { createHash, randomUUID } from 'node:crypto';
 import { ACCESS_COOKIE } from './auth-service.mjs';
@@ -11,28 +11,12 @@ const METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
 const REASON = /^[a-z0-9_]{1,40}$/u;
 const WRITE_TIMEOUT_MS = 1500;
 const ATTACK_ID = /^[a-z0-9_.-]{1,80}$/u;
-// 점검 이름 헤더(X-Attack-Id)와, 평소 브라우저·Vercel이 붙이는 것이 아닌 헤더의 "이름"만 기록합니다(값은 기록하지 않음).
-// 어떤 점검 도구가 어떤 헤더로 점검 이름을 붙여 보내는지 서버 기록으로 확인하려는 용도입니다.
-const COMMON_HEADERS = new Set(['host', 'connection', 'user-agent', 'accept', 'accept-encoding', 'accept-language', 'content-type', 'content-length',
-  'authorization', 'cookie', 'origin', 'referer', 'cache-control', 'pragma', 'upgrade-insecure-requests', 'forwarded', 'via', 'x-request-id', 'x-attack-id',
-  'x-real-ip', 'priority', 'dnt', 'te', 'if-none-match', 'if-modified-since', 'range', 'traceparent', 'tracestate']);
-const isCommon = name => COMMON_HEADERS.has(name) || /^(sec-|x-forwarded-|x-vercel-|x-amzn-|cf-)/u.test(name);
-// 점검 도구가 점검 이름을 User-Agent나 쿼리로 붙이는지 확인하려는 임시 관찰 값입니다(출력 가능한 ASCII 160자까지). 쿠키·토큰 헤더는 읽지 않습니다.
-const printable = value => (typeof value === 'string' && value ? value.replace(/[^ -~]/gu, '?').slice(0, 160) : null);
-export const uaOf = request => printable(request.headers?.['user-agent']);
-export const qsOf = request => { const url = typeof request.url === 'string' ? request.url : ''; const at = url.indexOf('?'); return at < 0 ? null : printable(url.slice(at + 1)); };
+// 점검 이름 헤더(X-Attack-Id)의 값만 남깁니다(영문 소문자·숫자·_·.·- 80자까지). 다른 헤더·User-Agent·쿼리 문자열은 남기지 않습니다.
 export function attackIdOf(request) {
   const raw = request.headers?.['x-attack-id'];
   const value = typeof raw === 'string' ? raw.split(',')[0].trim() : null;   // 같은 이름이 둘 합쳐져 오면(값, 값) 첫 값만 읽습니다
   return value && ATTACK_ID.test(value) ? value : null;
 }
-export function extraHeaderNames(request) {
-  const names = Object.keys(request.headers ?? {}).map(name => name.toLowerCase()).filter(name => /^[a-z0-9-]{1,40}$/u.test(name) && !isCommon(name)).sort();
-  let joined = '';
-  for (const name of names) { const next = joined ? `${joined},${name}` : name; if (next.length > 200) break; joined = next; }
-  return joined || null;
-}
-
 // 사용자 ID의 가명: 해시 앞 12자. 같은 사용자는 같은 값이지만 원래 ID를 알아낼 수 없고, 화면에는 그 일부만 보입니다.
 export const actorOf = userId => createHash('sha256').update(String(userId).toLowerCase(), 'utf8').digest('hex').slice(0, 12);
 
@@ -60,11 +44,11 @@ async function post(row, deps) {
   const upstream = await (deps.fetch ?? fetch)(url, { method: 'POST', headers, body: JSON.stringify(row), signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) });
   return upstream.ok;
 }
-// 점검 이름·헤더 이름 열(attack_id, hdrs)이 아직 없는 DB에서도 기록이 끊기지 않도록, 실패하면 그 열 없이 한 번 더 씁니다.
+// 점검 이름 열(attack_id)이 아직 없는 DB에서도 기록이 끊기지 않도록, 실패하면 그 열 없이 한 번 더 씁니다.
 async function insert(row, deps) {
   if (await post(row, deps)) return true;
-  const { attack_id: a, hdrs: h, ua, qs, ...basic } = row;
-  return (a !== undefined || h !== undefined || ua !== undefined || qs !== undefined) ? post(basic, deps) : false;
+  const { attack_id: a, ...basic } = row;
+  return a !== undefined ? post(basic, deps) : false;
 }
 
 // route: 'notes', 'notes/:id', 'notices', 'notices/:id', 'restore', 'device' 처럼 고정된 이름만 씁니다(실제 경로의 ID는 남기지 않음).
@@ -80,7 +64,7 @@ export function withOpsLog(route, handler, deps = {}) {
       done = true;
       try {
         await insert({ request_id: requestId, method, route, status, reason: reasonOf(denyReason, body), auth: authKind(request),
-          actor: request.opsActor ? actorOf(request.opsActor) : null, attack_id: attackIdOf(request), hdrs: extraHeaderNames(request), ua: uaOf(request), qs: qsOf(request) }, deps);
+          actor: request.opsActor ? actorOf(request.opsActor) : null, attack_id: attackIdOf(request) }, deps);
       } catch { /* 기록 실패는 응답에 영향을 주지 않습니다. */ }
     };
     const proxy = new Proxy(response, {

@@ -35,8 +35,8 @@ test('응답을 보내기 전에 결과를 먼저 기록하고, 메서드·경�
   assert.equal(h.out.status, 403);
   assert.deepEqual(h.out.body, { error: 'FORBIDDEN', secret: '메모 본문' });        // 응답은 그대로
   assert.equal(h.out.headers.get('x-request-id'), REQ_ID);
-  assert.deepEqual(h.rows, [{ request_id: REQ_ID, method: 'GET', route: 'notes/:id', status: 403, reason: 'owner_mismatch', auth: 'bearer', actor: null, attack_id: null, hdrs: null, ua: null, qs: 'x=1' }]);
-  assert.ok(!JSON.stringify(h.rows).match(/Bearer|제목|본문|a\.b\.c|\?x=1/u));       // 토큰·본문·실제 경로의 ID가 없음(쿼리는 관찰용으로 qs에만, '?' 없이)
+  assert.deepEqual(h.rows, [{ request_id: REQ_ID, method: 'GET', route: 'notes/:id', status: 403, reason: 'owner_mismatch', auth: 'bearer', actor: null, attack_id: null }]);
+  assert.ok(!JSON.stringify(h.rows).match(/Bearer|제목|본문|a\.b\.c|\?x=1/u));       // 토큰·본문·실제 경로의 ID·쿼리가 없음
 }));
 
 test('이유는 X-Deny-Reason이 없으면 오류 문구를 소문자로 쓰고, 모양이 맞지 않으면 남기지 않는다', () => withEnv(async () => {
@@ -81,13 +81,13 @@ test('비밀 키가 없으면 기록을 건너뛰고 응답은 그대로다', as
   } finally { if (saved !== undefined) process.env.SUPABASE_SECRET_KEY = saved; }
 });
 
-test('점검 이름 헤더(X-Attack-Id)와 평소와 다른 헤더의 이름만 남기고, 헤더 값과 모양이 틀린 이름은 남기지 않는다', () => withEnv(async () => {
+test('점검 이름 헤더(X-Attack-Id) 값만 남기고, 다른 헤더·User-Agent·쿼리와 모양이 틀린 이름은 남기지 않는다', () => withEnv(async () => {
   const h = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
   await h.run({ method: 'GET', headers: { 'x-attack-id': 'anonymous_api_notes_read', 'x-aleph-run': 'secret-run-value', 'x-vercel-id': 'iad1::x', 'user-agent': 'x', host: 'h',
     'sec-fetch-mode': 'cors', 'x-forwarded-for': '1.2.3.4', 'x-judge-token': 'tok_should_not_be_stored' } });
   assert.equal(h.rows[0].attack_id, 'anonymous_api_notes_read');
-  assert.equal(h.rows[0].hdrs, 'x-aleph-run,x-judge-token');                       // 이름만, 정렬됨
-  assert.ok(!JSON.stringify(h.rows).match(/secret-run-value|tok_should_not_be_stored|1\.2\.3\.4/u));   // 값은 남지 않음
+  assert.deepEqual(Object.keys(h.rows[0]).sort(), ['actor', 'attack_id', 'auth', 'method', 'reason', 'request_id', 'route', 'status']);   // 헤더 이름·UA·쿼리 열 없음
+  assert.ok(!JSON.stringify(h.rows).match(/secret-run-value|tok_should_not_be_stored|1\.2\.3\.4|x-aleph-run|x-judge-token/u));
   const bad = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
   await bad.run({ method: 'GET', headers: { 'x-attack-id': 'Bad Id!<script>' } });
   assert.equal(bad.rows[0].attack_id, null);
@@ -100,7 +100,7 @@ test('새 열이 아직 없는 DB가 거부해도 그 열 없이 한 번 더 써
   const rows = [];
   const fetch = async (url, init) => {
     const row = JSON.parse(init.body);
-    if ('attack_id' in row || 'hdrs' in row) return new Response('{"message":"column not found"}', { status: 400 });
+    if ('attack_id' in row) return new Response('{"message":"column not found"}', { status: 400 });
     rows.push(row);
     return new Response(null, { status: 201 });
   };
@@ -112,11 +112,9 @@ test('새 열이 아직 없는 DB가 거부해도 그 열 없이 한 번 더 써
   assert.deepEqual(Object.keys(rows[0]).sort(), ['actor', 'auth', 'method', 'reason', 'request_id', 'route', 'status']);
 }));
 
-test('User-Agent와 쿼리 문자열은 출력 가능한 ASCII 160자까지만 남기고, 쿠키·토큰은 읽지 않는다', () => withEnv(async () => {
+test('User-Agent·쿼리 문자열·쿠키·토큰은 기록에 남지 않는다', () => withEnv(async () => {
   const h = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
-  await h.run({ method: 'GET', url: '/api/notes?attack=anonymous_api_notes_read&x=한글', headers: { 'user-agent': `aleph-judge/1.0 ${'a'.repeat(300)}`, cookie: 'sb-access=SECRETCOOKIE', authorization: 'Bearer SECRETTOKEN' } });
-  assert.equal(h.rows[0].qs, 'attack=anonymous_api_notes_read&x=??');
-  assert.equal(h.rows[0].ua.length, 160);
-  assert.ok(h.rows[0].ua.startsWith('aleph-judge/1.0 '));
-  assert.ok(!JSON.stringify(h.rows).match(/SECRETCOOKIE|SECRETTOKEN/u));
+  await h.run({ method: 'GET', url: '/api/notes?attackId=anonymous_api_notes_read&x=1', headers: { 'user-agent': 'aleph-judge/1.0', cookie: 'sb-access=SECRETCOOKIE', authorization: 'Bearer SECRETTOKEN' } });
+  assert.ok(!('ua' in h.rows[0]) && !('qs' in h.rows[0]) && !('hdrs' in h.rows[0]));
+  assert.ok(!JSON.stringify(h.rows).match(/aleph-judge|attackId=|SECRETCOOKIE|SECRETTOKEN/u));
 }));
