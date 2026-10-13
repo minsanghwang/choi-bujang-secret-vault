@@ -4,6 +4,7 @@
 // 주인이 다르거나 비어 있으면 기본 거부합니다. URL·본문의 owner_id·userId·role은 믿지 않습니다.
 import config from '../aleph.config.json' with { type: 'json' };
 import { isSameSite, sessionAuthorization } from './auth-service.mjs';
+import { authorize, ZONES } from './zones.mjs';
 import { createLoginVerifier } from './verify-login.mjs';
 
 const TABLE = 'defense_notes';
@@ -16,6 +17,8 @@ const json = (response, status, body) => {
   response.status(status).json(body);
 };
 const fail = (response, status, error) => json(response, status, { error });
+// 거부 사유는 본문이 아니라 짧은 헤더로 남깁니다. 자료는 한 글자도 담지 않습니다.
+const deny = (response, error, reason) => { response.setHeader('X-Deny-Reason', reason); return fail(response, 403, error); };
 
 let cachedVerifier = { key: null, verify: null };
 function defaultVerifier() {
@@ -132,14 +135,20 @@ export async function handleCollection(request, response, deps = {}) {
   }
 }
 
-// 소유자 비교. 행이 없으면 404, 주인이 내가 아니면(비어 있는 경우 포함) 403으로 기본 거부합니다.
-const sameUser = (owner, userId) => typeof owner === 'string' && owner.toLowerCase() === userId.toLowerCase();
 const OWNER_KEYS = ['owner_id', 'ownerId', 'userId', 'user_id'];
+const sameUser = (owner, userId) => typeof owner === 'string' && owner.toLowerCase() === userId.toLowerCase();
 
-// /api/notes/:id : GET 한 건, PUT 수정, DELETE 삭제
-export async function handleItem(request, response, deps = {}) {
-  if (!['GET', 'PUT', 'DELETE'].includes(request.method)) {
-    response.setHeader('Allow', 'GET, PUT, DELETE');
+// 한 건 읽기. 구역 열(zone)이 아직 없는 DB(8단계 SQL 적용 전)이면 구역 없이 다시 읽고 모든 행을 개인 메모로 봅니다.
+async function readRow(target, deps) {
+  const found = await rest('GET', { ...target, select: 'id,title,content,owner_id,zone' }, undefined, deps);
+  if (found.status === 400) return rest('GET', { ...target, select: 'id,title,content,owner_id' }, undefined, deps);
+  return found;
+}
+
+// /api/notes/:id (개인 메모) 와 /api/notices/:id (강사 공지)가 같은 판단을 거칩니다.
+async function serveItem(route, methods, request, response, deps) {
+  if (!methods.includes(request.method)) {
+    response.setHeader('Allow', methods.join(', '));
     return fail(response, 405, 'METHOD_NOT_ALLOWED');
   }
   const who = await requireLogin(request, response, deps);
@@ -147,34 +156,41 @@ export async function handleItem(request, response, deps = {}) {
   const id = Array.isArray(request.query?.id) ? request.query.id[0] : request.query?.id;
   if (typeof id !== 'string' || !UUID.test(id)) return fail(response, 400, 'INVALID_ID');
   const target = { id: `eq.${id.toLowerCase()}` };
-  // 본문 검사는 DB를 읽기 전에 합니다. 소유자를 바꾸려는 요청은 거부합니다.
+  // 본문 검사는 DB를 읽기 전에 합니다. 개인 메모에서 소유자를 바꾸려는 요청은 거부합니다.
   let note = null;
   if (request.method === 'PUT') {
     const body = readBody(request);
-    if (body && OWNER_KEYS.some(key => key in body && !sameUser(body[key], who.userId))) {
-      return fail(response, 403, 'OWNER_CHANGE_FORBIDDEN');
+    if (route === ZONES.NOTE && body && OWNER_KEYS.some(key => key in body && !sameUser(body[key], who.userId))) {
+      return deny(response, 'OWNER_CHANGE_FORBIDDEN', 'owner_change');
     }
     note = readNote(request);
     if (!note) return fail(response, 400, 'INVALID_NOTE');
   }
   try {
-    // 기존 행의 owner_id를 읽어 검증된 사용자와 비교합니다.
-    const found = await rest('GET', { ...target, select: 'id,title,content,owner_id' }, undefined, deps);
+    const found = await readRow(target, deps);
     if (!found.ok || !Array.isArray(found.rows)) return await upstreamFailed(response, found);
     const row = found.rows[0];
     if (!row) return fail(response, 404, 'NOT_FOUND');
-    if (!sameUser(row.owner_id, who.userId)) return fail(response, 403, 'FORBIDDEN');
+    const action = { GET: 'read', PUT: 'write', DELETE: 'delete' }[request.method];
+    const verdict = authorize({ route, action, row, userId: who.userId });
+    if (!verdict.allow) return deny(response, 'FORBIDDEN', verdict.reason);
+    response.setHeader('X-Resource-Id', verdict.resourceId);
     if (request.method === 'GET') return json(response, 200, view(row));
 
-    // 쓰기 조건에도 owner_id를 넣어, 비교 뒤 주인이 바뀌어도 남의 행은 바꾸거나 지우지 않습니다.
-    const guard = { ...target, owner_id: `eq.${who.userId}` };
     let upstream;
-    if (request.method === 'DELETE') {
-      upstream = await rest('DELETE', { ...guard, select: 'id' }, undefined, deps);
+    if (route === ZONES.NOTE) {
+      // 쓰기 조건에도 owner_id를 넣어, 비교 뒤 주인이 바뀌어도 남의 행은 바꾸거나 지우지 않습니다.
+      const guard = { ...target, owner_id: `eq.${who.userId}` };
+      if (request.method === 'DELETE') {
+        upstream = await rest('DELETE', { ...guard, select: 'id' }, undefined, deps);
+      } else {
+        upstream = await rest('PATCH', { ...guard, select: 'id,title,content' },
+          { title: note.title, content: note.content, owner_id: who.userId }, deps);
+      }
     } else {
-      // 새 행의 소유자도 검증된 사용자로 고정합니다.
-      upstream = await rest('PATCH', { ...guard, select: 'id,title,content' },
-        { title: note.title, content: note.content, owner_id: who.userId }, deps);
+      // 공지는 제목·내용만 바꿉니다. 소유자·구역은 건드리지 않습니다.
+      upstream = await rest('PATCH', { ...target, zone: 'eq.notice', select: 'id,title,content' },
+        { title: note.title, content: note.content }, deps);
     }
     if (!upstream.ok || !Array.isArray(upstream.rows)) return await upstreamFailed(response, upstream);
     if (!upstream.rows[0]) return fail(response, 404, 'NOT_FOUND');
@@ -188,3 +204,10 @@ export async function handleItem(request, response, deps = {}) {
     return fail(response, 502, 'NOTES_UPSTREAM_ERROR');
   }
 }
+
+// /api/notes/:id : GET 한 건, PUT 수정, DELETE 삭제 (본인 메모만)
+export const handleItem = (request, response, deps = {}) =>
+  serveItem(ZONES.NOTE, ['GET', 'PUT', 'DELETE'], request, response, deps);
+// /api/notices/:id : GET 읽기(로그인한 사용자), PUT 수정(강사만). 추가·삭제는 이 API에 없습니다.
+export const handleNoticeItem = (request, response, deps = {}) =>
+  serveItem(ZONES.NOTICE, ['GET', 'PUT'], request, response, deps);

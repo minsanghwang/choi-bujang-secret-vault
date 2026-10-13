@@ -1,23 +1,28 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 7단계 「평소와 다른 접속은 다시 확인합니다」
+## 현재 상태: 8단계 「자료마다 갈 수 있는 구역을 나눕니다」
 
 **작동하는 기능**
 
-- 판정기 `src/decider.mjs`의 `decide(request)`에 규칙 두 개가 있습니다(`RULE_IDS`: `device_registered`, `step_up_required`). 6단계의 기기 규칙은 그대로입니다: `deviceRegistered`가 `true`가 아니면 `deny`·`device_not_registered`.
-- 새 규칙 `step_up_required`: 등록 기기라도 **세 조건이 함께** 맞을 때만 `step_up`(이유 코드 `step_up_required`)입니다. ① `signals.hour`가 0~5시, ② `signals.network`가 `unusual`(처음 보는 네트워크), ③ `recentEvents`의 `risk_signal` 중 최근 600초 안의 `count` 합이 10 이상(짧은 시간에 많은 읽기). 지역(`region`)은 판단에 쓰지 않으므로 지역 하나만으로는 허용도 차단도 바뀌지 않고 영구 차단도 없습니다. 하나라도 빠지면 `allow`(`approved`)입니다.
-- 입력 검사: `signals.source`가 엔진이 표시한 가상 사건 출처(`judge_fixture`)이고 `network`·`hour` 형식이 맞을 때만 근거로 씁니다. 값이 없거나 `none`·알 수 없는 출처·형식 불일치는 근거가 되지 않으며, 임의의 정상값으로 채우지 않습니다. 브라우저 헤더, `request.device`·`identity`·`geo`·`role` 같은 계약 밖 값은 읽지 않아서 위조해도 신뢰 정보가 되지 않습니다(`test/decider.test.mjs`).
-- 다시 로그인 확인: 엔진이 검증해 넘기는 `stepUp`(`verified: true`, `authAgeSeconds` 0~900)이 있을 때만 이상 접속을 `allow`로 다시 판정합니다. 토큰 원문은 읽거나 기록하지 않습니다. **실제로 새 로그인 전 자료를 막고 새 요청을 허용하는 것은 계약이 준비된 엔진 환경에서만 실측할 수 있어 여기서는 미실행입니다.**
-- `aleph.config.json`: `step` 7. 자기 점검에 `unusual_access_step_up`을 미실행으로 기록합니다. 기존 화면과 5~6단계 기능은 그대로입니다.
+- 자료실을 두 구역으로 나누고 자원 ID를 따로 표시합니다(`src/zones.mjs`). `note:<id>` = 내 자료실 메모(주인만), `notice:<id>` = 강사 공지(읽기는 로그인한 사용자, 수정은 서버에 강사로 저장된 계정만). 자료 API는 한 건 요청마다 응답 헤더 `X-Resource-Id`로 이 ID를 알리고, 거부하면 본문 대신 짧은 헤더 `X-Deny-Reason`(`owner_mismatch`, `owner_missing`, `instructor_required`, `wrong_zone`, `unknown_zone`, `owner_change`)을 남깁니다. 본문 형식과 기존 주소 `/api/notes`, `/api/notes/:id`, 화면과 메뉴는 그대로입니다.
+- 새 주소 `/api/notices/:id` (`api/notices/[id].js`, `aleph.config.json`의 `allowedRoutes`에 추가): `GET` 읽기, `PUT` 수정만 있고 추가·삭제는 없습니다(405). 공지는 제목·내용만 바꾸며 소유자와 구역은 바뀌지 않습니다.
+- 자료 API의 최종 확인: 검증된 사용자 ID(`src/verify-login.mjs`)와 DB에 **저장된** 행의 구역·`owner_id`, 서버 환경변수 `INSTRUCTOR_USER_IDS`(강사 사용자 UUID를 쉼표로 구분, 비어 있으면 강사 없음)만 비교합니다. 화면 메뉴와 요청 본문·헤더의 `role`·`owner_id`·`zone`은 읽지 않습니다. 개인 메모 주소로 공지를, 공지 주소로 개인 메모를 요청하면 강사여도 `403 wrong_zone`입니다.
+- 판정기 `src/decider.mjs`(`RULE_IDS`: `device_registered`, `zone_access`, `step_up_required`)에 구역 규칙 `zone_access`가 있습니다. 엔진이 확인한 `service`·`method`·`path`·`route`가 구역 표의 한 줄과 정확히 맞을 때만 통과하고, 표에 없는 경로·메서드와 `route`의 불일치·쿼리가 붙은 요청(`queryLength` ≠ 0)·`:id` 자리의 `export` 같은 기능 이름·더 깊은 경로는 `deny`와 `zone_not_allowed`입니다. 자료는 쿼리가 아니라 경로의 ID 한 칸으로만 고릅니다. 강사 공지 수정(`PUT /notices/:id`)은 요청 계약에 강사 역할 값이 없어 판정기가 허용하지 않습니다. 6단계 기기 규칙과 7단계 추가 확인 규칙은 그대로이고 순서는 기기 → 구역 → 추가 확인입니다.
+- `aleph.config.json`: `step` 8. 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)을 미실행으로 기록합니다.
 
-**확인 순서**
+**다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
 
-1. `npm run decider:test`: `통과` 네 줄이 나와야 합니다 — 등록 기기의 정상 요청(allow), 미등록 기기의 가상 요청(deny·`device_not_registered`), 복합 이상 접속(`step_up`·`step_up_required`), 다시 확인한 복합 이상 접속(allow).
-2. `npm run fixture:7`: `정상 사건: allow`, `복합 이상 사건: step_up`.
-3. `npm run test:decider && npm run test:r5 && npm run test:step2 && npm run test:package`
-4. 위 명령은 가상 요청 연습이며 심판 판정이나 실제 재로그인 차단의 증거가 아닙니다.
+1. (선택) `supabase/step8-zones.sql`을 ①②③ 블록으로 나눠 Run 하면 `defense_notes`에 `zone` 열(`note`/`notice`)이 생깁니다. 실행 전에는 서버가 모든 행을 개인 메모로 보므로 앱은 그대로 동작하고 공지 API는 쓸 수 없습니다. 공지는 SQL 안의 주석 예시처럼 대시보드에서 직접 만듭니다.
+2. 강사를 쓰려면 Vercel 환경변수 `INSTRUCTOR_USER_IDS`에 강사 계정의 사용자 UUID를 직접 넣고 재배포합니다. (비밀번호·키가 아니지만 코드와 Git에는 넣지 않습니다.)
+3. 시험: `npm run test:decider && npm run test:step2 && npm run test:r5 && npm run test:package`, 그리고 `npm run decider:test` (가상 요청과 가짜 DB로 도는 시험이며 실제 DB·배포·심판 판정을 증명하지 않습니다.)
+4. 직접 API 확인(예시, 로그인 후 쿠키 사용 또는 `Authorization` 헤더): B 계정으로 A 메모 번호를 `GET /api/notes/<번호>` 하면 `403`이고 자료가 없어야 합니다. 일반 학생이 `PUT /api/notices/<번호>` 하면 `403`(`X-Deny-Reason: instructor_required`)이어야 합니다. 본인 메모 읽기·수정은 그대로 `200`입니다.
 
 ### 이 단계에 남은 약점
+
+- 판정기는 메모의 주인이 누구인지 알 수 없습니다(`subjectId`는 가명이고 요청 계약에 소유자·역할 값이 없습니다). 소유자·강사 대조는 자료 API만 하므로, 판정기만으로는 B가 A의 메모 번호를 요청하는 것을 막지 못합니다. 강사 공지 수정은 판정기가 모두 거부하므로 엔진을 거치는 경로에서는 강사도 수정할 수 없습니다. 엔진이 강사 역할을 별도 계약으로 제공하면 그때 허용 조건을 추가해야 합니다.
+- `zone_not_allowed` 이유 코드는 운영 등록부의 `allowedReasonCodes`에 있어야 합니다. 등록되지 않았다면 엔진이 응답을 거부해 접근이 막힙니다(허용으로 바뀌지는 않습니다).
+- 강사 목록은 환경변수 하나이고 이력·만료가 없습니다. 목록 조회(`GET /api/notices`)와 공지 작성 API는 만들지 않았습니다.
+- 구역 시험은 가짜 DB로만 했고 `supabase/step8-zones.sql` 적용과 실제 배포 동작은 확인하지 않았습니다.
 
 - 이상 접속 기준(0~5시, 10건 이상 등)은 가상 사건에 맞춘 임의 값이고, 실제 사용자의 평소 패턴을 학습한 것이 아닙니다. 세 조건이 모두 맞지 않으면 걸리지 않아, 더 약하게 섞인 이상 접속은 지나갈 수 있습니다. 위치·네트워크 신호는 현재 실제 경로에서는 `unknown`이라 가상 사건에서만 작동합니다. 판정기 연습은 가상 요청이며 실제 엔진 연결과 재로그인 차단은 증명하지 않습니다.
 

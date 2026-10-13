@@ -1,5 +1,5 @@
 {
-  "step": 7,
+  "step": 8,
   "repoUrl": "https://github.com/minsanghwang/choi-bujang-secret-vault",
   "publicAppUrl": "https://choi-bujang-secret-vault-cstp.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
@@ -11,7 +11,8 @@
   },
   "allowedRoutes": [
     "/api/notes",
-    "/api/notes/:id"
+    "/api/notes/:id",
+    "/api/notices/:id"
   ],
   "originalApiUrl": "https://uhbltbjjnswrhmtmtofb.supabase.co/rest/v1/defense_notes",
   "database": {

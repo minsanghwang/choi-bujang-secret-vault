@@ -67,3 +67,46 @@ test('미등록 기기는 이상 접속 여부와 상관없이 기존 규칙대�
   assert.equal(result.reasonCode, 'device_not_registered');
   assert.deepEqual(result.ruleIds, ['device_registered']);
 });
+
+// ---- 8단계: 구역 규칙 ----
+const withRoute = (method, route, path, extra = {}) => fresh(normal, { method, route, path, ...extra });
+
+test('내 자료실 메모 경로는 허용하고, 정확한 경로가 아니면 모두 거부한다', async () => {
+  for (const [method, route, path] of [['GET', 'GET /notes', '/notes'], ['POST', 'POST /notes', '/notes'],
+    ['GET', 'GET /notes/:id', '/notes/11111111-1111-4111-8111-111111111111'],
+    ['PUT', 'PUT /notes/:id', '/notes/abc'], ['DELETE', 'DELETE /notes/:id', '/notes/abc'],
+    ['GET', 'GET /notices/:id', '/notices/abc']]) {
+    assert.equal((await decide(withRoute(method, route, path))).decision, 'allow', route);
+  }
+  for (const request of [
+    withRoute('GET', 'GET /admin', '/admin'),
+    withRoute('GET', 'GET /notes/:id', '/notes/export'),            // 기능 이름은 자료 ID 자리에 못 옴
+    withRoute('GET', 'GET /notes/:id', '/notes/x/export'),          // 더 깊은 기능 경로
+    withRoute('GET', 'GET /notes/:id', '/notes/abc', { queryLength: 8 }),   // 쿼리로 기능을 고르지 않음
+    withRoute('GET', 'GET /notes/:id', '/notes/..'),
+    withRoute('DELETE', 'GET /notes/:id', '/notes/abc'),            // method와 route 불일치
+    withRoute('GET', 'GET /notes/:id', '/notices/abc'),             // route와 path 불일치
+    withRoute('GET', 'GET /notices', '/notices'),                   // 표에 없는 줄
+    withRoute('GET', 'constructor', '/notes'),
+    withRoute('GET', '__proto__', '/notes'),
+    fresh(normal, { service: 'files' }),
+    fresh(normal, { subjectId: '' }),
+    fresh(normal, { route: undefined }),
+  ]) {
+    const res = await decide(request);
+    assert.equal(res.decision, 'deny', request.route);
+    assert.equal(res.reasonCode, 'zone_not_allowed');
+    assert.deepEqual(res.ruleIds, ['zone_access']);
+  }
+});
+
+test('강사 공지 수정은 판정기가 거부한다(요청 계약에 강사 역할 값이 없음)', async () => {
+  const res = await decide(withRoute('PUT', 'PUT /notices/:id', '/notices/abc', { role: 'instructor', stepUp: { verified: true, authAgeSeconds: 1 } }));
+  assert.equal(res.decision, 'deny');
+  assert.equal(res.reasonCode, 'zone_not_allowed');
+});
+
+test('미등록 기기는 구역과 상관없이 기존 규칙으로 먼저 거부한다', async () => {
+  const res = await decide(withRoute('GET', 'GET /admin', '/admin', { deviceRegistered: false }));
+  assert.equal(res.reasonCode, 'device_not_registered');
+});

@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (![5, 6, 7].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (![5, 6, 7, 8].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -92,5 +92,9 @@ export async function runAttackChecks(config) {
     ...(config.step >= 7 ? [{ attackId: 'unusual_access_step_up',
       expected: '평소와 다른 시각·처음 보는 네트워크·많은 읽기가 함께이면 추가 확인(step_up), 정상 사건은 허용',
       observed: '미실행: 이 사건은 심판이 보내며, 학생 점검은 npm run decider:test의 가상 요청 연습만 함. 실제 재로그인 전 자료 차단은 엔진 계약 환경에서만 실측' }] : []),
+    // 8단계: 구역 점검은 로그인 계정이 필요해 학생 점검이 보내지 않습니다. 비로그인 요청만 보냅니다.
+    ...(config.step >= 8 ? [{ attackId: 'cross_zone_direct_api',
+      expected: 'B가 A의 메모를, 일반 학생이 강사 공지 수정을 직접 API로 요청하면 403이고 자료가 나오지 않음',
+      observed: '미실행: 이 점검은 A·B·강사 로그인 계정 정보 없이 실행되어 구역 간 요청을 보내지 않음. 로컬 시험은 가짜 DB로만 확인함' }] : []),
   ];
 }

@@ -122,7 +122,7 @@ test('step 6 attack check keeps the step 5 requests and leaves the device attack
     const results = await runAttackChecks(step6);
     assert.equal(results.at(-1).attackId, 'unregistered_device_request');
     assert.match(results.at(-1).observed, /^미실행/u);
-    await assert.rejects(runAttackChecks({ ...step6, step: 8 }));
+    await assert.rejects(runAttackChecks({ ...step6, step: 9 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -139,7 +139,24 @@ test('step 7 attack check lists the unusual access check as not run', async () =
     const results = await runAttackChecks(step7);
     assert.deepEqual(results.slice(-2).map(item => item.attackId), ['unregistered_device_request', 'unusual_access_step_up']);
     assert.match(results.at(-1).observed, /^미실행/u);
-    await assert.rejects(runAttackChecks({ ...step7, step: 8 }));
+    await assert.rejects(runAttackChecks({ ...step7, step: 9 }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('step 8 attack check lists the cross-zone request as not run', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => (new URL(url).pathname === '/'
+      ? new Response('<html>login</html>', { status: 200 })
+      : Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 }));
+    const step8 = { ...config, step: 8, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
+    const results = await runAttackChecks(step8);
+    assert.equal(results.at(-1).attackId, 'cross_zone_direct_api');
+    assert.match(results.at(-1).observed, /^미실행/u);
+    await assert.rejects(runAttackChecks({ ...step8, step: 9 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
