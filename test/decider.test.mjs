@@ -74,12 +74,15 @@ const withRoute = (method, route, path, extra = {}) => fresh(normal, { method, r
 test('내 자료실 메모 경로는 허용하고, 정확한 경로가 아니면 모두 거부한다', async () => {
   for (const [method, route, path] of [['GET', 'GET /notes', '/notes'], ['POST', 'POST /notes', '/notes'],
     ['GET', 'GET /notes/:id', '/notes/11111111-1111-4111-8111-111111111111'],
-    ['PUT', 'PUT /notes/:id', '/notes/abc'], ['DELETE', 'DELETE /notes/:id', '/notes/abc'],
-    ['GET', 'GET /notices/:id', '/notices/abc']]) {
+    ['PUT', 'PUT /notes/:id', '/notes/abc'], ['DELETE', 'DELETE /notes/:id', '/notes/abc']]) {
     assert.equal((await decide(withRoute(method, route, path))).decision, 'allow', route);
   }
   for (const request of [
     withRoute('GET', 'GET /admin', '/admin'),
+    withRoute('GET', 'GET /notices/:id', '/notices/abc'),           // 공지 읽기는 판정기가 열지 않음
+    withRoute('GET', 'GET /notes/:id', '/notes/notice-1'),          // 공지 ID로 메모 경로
+    withRoute('PUT', 'PUT /notes/:id', '/notes/announcement-3'),
+    withRoute('DELETE', 'DELETE /notes/:id', '/notes/teacher_board'),
     withRoute('GET', 'GET /notes/:id', '/notes/export'),            // 기능 이름은 자료 ID 자리에 못 옴
     withRoute('GET', 'GET /notes/:id', '/notes/x/export'),          // 더 깊은 기능 경로
     withRoute('GET', 'GET /notes/:id', '/notes/abc', { queryLength: 8 }),   // 쿼리로 기능을 고르지 않음
