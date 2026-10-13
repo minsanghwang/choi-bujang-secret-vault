@@ -66,9 +66,9 @@ export function buildChecks(config) {
       expected: '401 또는 403', expect: DENIED },
     { stage: 11, name: 'A 기기 상태 조회(쿠키 없는 직접 호출)', kind: 'normal', as: 'A', method: 'GET', path: () => '/api/device',
       expected: '200과 상태 값', expect: (s, d) => s === 200 && typeof d?.state === 'string' },
-    { stage: 12, name: '비로그인 작전실 요약', kind: 'forbidden', as: 'none', noServer: true, method: 'GET', path: () => '/api/ops',
+    { stage: 12, name: '비로그인 작전실 요약', kind: 'forbidden', as: 'none', method: 'GET', path: () => '/api/ops',
       expected: '401 또는 403', expect: (s, d) => DENIED(s) && d?.schema === undefined },
-    { stage: 12, name: 'A 작전실 요약', kind: 'normal', as: 'A', noServer: true, method: 'GET', path: () => '/api/ops',
+    { stage: 12, name: 'A 작전실 요약', kind: 'normal', as: 'A', method: 'GET', path: () => '/api/ops',
       expected: '200과 aleph.ops.v1', expect: (s, d) => s === 200 && d?.schema === 'aleph.ops.v1' },
     // 정리: 이 절차가 만든 가상 메모를 지웁니다(정상 요청).
     { stage: 4, name: 'A 자기 메모 삭제(정리)', kind: 'normal', as: 'A', method: 'DELETE', needs: 'noteId', path: ctx => `/api/notes/${ctx.noteId}`,
@@ -132,7 +132,7 @@ export async function runChecks({ config, tokens = {}, fetch: fetchFn = fetch, n
     const ok = Boolean(check.expect(reply.status, reply.data));
     if (ok && check.after) { try { check.after(ctx, reply.data); } catch { /* 다음 줄이 미실행으로 남음 */ } }
     const reason = reply.data && typeof reply.data.error === 'string' ? ` ${text(reply.data.error, 40)}` : '';
-    const record = check.noServer ? { state: '해당 없음', note: '이 주소는 서버 요청 기록 대상이 아님(정적 파일·작전실 조회)' } : await serverRecord(reply.requestId, reply.status);
+    const record = check.noServer ? { state: '해당 없음', note: '이 주소는 서버 요청 기록 대상이 아님(정적 파일)' } : await serverRecord(reply.requestId, reply.status);
     rows.push({ ...base, actual: `HTTP ${reply.status}${reason}`, requestId: reply.requestId, checkedAt, result: ok ? RESULT.match : RESULT.mismatch,
       serverRecord: record.state, note: record.note });
   }

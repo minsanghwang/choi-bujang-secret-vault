@@ -20,7 +20,7 @@ function fakeServer({ leakNotice = false } = {}) {
     const requestId = headers['X-Request-Id'];
     calls.push(`${options.method ?? 'GET'} ${u.pathname}${u.search ? '?…' : ''} as ${who}`);
     const reply = (status, data, record = true) => {
-      if (record && requestId && u.pathname !== '/api/ops') log.set(requestId, status);
+      if (record && requestId) log.set(requestId, status);          // 실제 서버처럼 /api/ops도 기록함
       return new Response(data === null ? null : JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'x-request-id': requestId ?? 'none' } });
     };
     if (u.pathname === '/data.json') return reply(404, { error: 'NOT_FOUND' }, false);
@@ -61,7 +61,8 @@ test('계정이 모두 있으면 요청마다 요청 ID·확인 시각·기대·
     assert.equal(row.result, RESULT.match, row.name);
   }
   const logged = ran.filter(row => !['해당 없음'].includes(row.serverRecord));
-  assert.ok(logged.length >= 14 && logged.every(row => row.serverRecord === '일치'));
+  assert.ok(logged.length >= 16 && logged.every(row => row.serverRecord === '일치'));     // /api/ops 두 줄도 서버 기록과 대조됨
+  assert.equal(ran.filter(row => row.serverRecord === '해당 없음').length, 1);              // 정적 /data.json만 기록 대상이 아님
   assert.ok(rows.some(row => row.kind === '정상') && rows.some(row => row.kind === '금지'));       // 허용과 거부 모두 측정 결과로 남음
 });
 
