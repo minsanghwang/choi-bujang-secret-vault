@@ -1,7 +1,9 @@
 // 10단계: 비공개 가상 메모 사본(defense_notes_backup)에서 지정한 한 건만 되살립니다.  POST /api/restore  (서비스: notes)
-// 요청 본문: { id, ownerId?, contentSha256?, dryRun? }. id만 필수입니다(noteId도 같은 뜻으로 받음).
-// 소유자는 서버가 검증한 로그인 사용자이고, 본문의 ownerId·contentSha256은 있으면 사본과 대조만 합니다(다르면 쓰지 않음).
-// 강사는 다른 사람의 메모를 복원할 때 ownerId를 적어야 합니다. 본문 값으로 권한이 생기지는 않습니다.
+// 요청 본문: { id, ownerId?, contentSha256?, dryRun? }  (id만 필수, noteId도 같은 뜻으로 받음)
+//  - 기본은 미리보기입니다. 쓰지 않고 복원할 사본의 버전과 바뀔 항목(제목·내용이 달라지는지)만 보여 주고, 실제로 보낼 확인값을 알려 줍니다.
+//  - 실제 복원은 dryRun:false 이면서 ownerId와 contentSha256을 모두 보냈을 때만 합니다. 사본의 ID·소유자·내용 해시가 요청과 모두 같고,
+//    저장된 해시가 내용에서 다시 계산한 값과도 같을 때만 쓰며, 하나라도 다르면 멈춥니다.
+//  - 소유자는 서버가 검증한 로그인 사용자이고, 본문 값으로 권한이 생기지는 않습니다. 강사는 다른 사람의 메모를 복원할 때 ownerId를 적어야 합니다.
 // 대상 한 건 외의 메모는 읽지도 쓰지도 않고, 지우지도 않습니다. 감사 기록(defense_restore_audit)은 덧붙이기만 합니다.
 // 응답과 로그에는 메모 제목·내용·토큰을 담지 않습니다.
 import { createHash } from 'node:crypto';
@@ -51,7 +53,7 @@ function readBody(request) {
       || (body.ownerId !== undefined && (typeof body.ownerId !== 'string' || !UUID.test(body.ownerId)))
       || (body.contentSha256 !== undefined && (typeof body.contentSha256 !== 'string' || !HASH.test(body.contentSha256)))
       || (body.dryRun !== undefined && typeof body.dryRun !== 'boolean')) return null;
-  return { id: id.toLowerCase(), ownerId: body.ownerId?.toLowerCase() ?? null, hash: body.contentSha256 ?? null, dryRun: body.dryRun === true };
+  return { id: id.toLowerCase(), ownerId: body.ownerId?.toLowerCase() ?? null, hash: body.contentSha256 ?? null, apply: body.dryRun === false };
 }
 
 // 감사 기록은 덧붙이기만 합니다. 실패해도 예외를 밖으로 내지 않고 성공 여부만 돌려줍니다.
@@ -68,6 +70,8 @@ async function restoreInner(request, response, deps) {
   if (!who) return undefined;
   const wanted = readBody(request);
   if (!wanted) return fail(response, 400, 'INVALID_RESTORE_REQUEST');
+  // 실제 복원에는 소유자와 내용 해시의 확인값이 모두 필요합니다. 없으면 쓰지 않습니다(미리보기만 가능).
+  if (wanted.apply && (!wanted.ownerId || !wanted.hash)) return fail(response, 400, 'CONFIRMATION_REQUIRED', 'confirmation_required');
   const caller = who.userId.toLowerCase();
   const owner = wanted.ownerId ?? caller;      // 본문에 소유자가 없으면 로그인한 본인의 메모로 봅니다.
   // 사본을 읽기 전에: 소유자 본인이거나 서버의 강사 목록에 있는 사람만 진행합니다.
@@ -77,7 +81,7 @@ async function restoreInner(request, response, deps) {
   }
   try {
     const found = await rest(BACKUP, 'GET', {
-      select: 'note_id,owner_id,position,title,content,note_created_at,content_sha256',
+      select: 'backup_id,backed_up_at,note_id,owner_id,position,title,content,note_created_at,content_sha256',
       note_id: `eq.${wanted.id}`, owner_id: `eq.${owner}`, ...(wanted.hash ? { content_sha256: `eq.${wanted.hash}` } : {}),
       order: 'backed_up_at.asc', limit: '1' }, undefined, deps);   // 해시가 없으면 이 메모의 가장 오래된(침해 전) 사본
     if (!found.ok || !Array.isArray(found.rows)) return fail(response, 502, 'RESTORE_UPSTREAM_ERROR');
@@ -101,10 +105,17 @@ async function restoreInner(request, response, deps) {
       if (String(current.owner_id ?? '').toLowerCase() !== owner) { await audit(deps, caller, wanted.id, 'denied', 'owner_change'); return fail(response, 403, 'FORBIDDEN', 'owner_change'); }
     }
     const summary = { id: wanted.id, ownerId: owner, contentSha256: copyHash };
-    if (wanted.dryRun) {
-      const liveMatches = current ? noteHash(String(current.title), String(current.content)) === copyHash : false;
+    if (!wanted.apply) {
+      // 미리보기: 쓰지 않습니다. 복원할 사본 버전과 바뀔 항목을 보여 주고, 실제 복원에 보낼 확인값을 알려 줍니다. 제목·내용은 담지 않습니다.
+      const changes = current
+        ? { create: false, title: String(current.title) !== copy.title, content: String(current.content) !== copy.content }
+        : { create: true, title: true, content: true };
       await audit(deps, caller, wanted.id, 'planned', null);
-      return json(response, 200, { dryRun: true, ...summary, liveExists: Boolean(current), liveMatchesCopy: liveMatches });
+      return json(response, 200, { applied: false, dryRun: true, ...summary,
+        backup: { id: copy.backup_id ?? null, takenAt: copy.backed_up_at ?? null, verified: true },
+        liveExists: Boolean(current), liveMatchesCopy: current ? !changes.title && !changes.content : false, changes,
+        willWrite: changes.create || changes.title || changes.content,
+        confirm: { dryRun: false, ownerId: owner, contentSha256: copyHash } });
     }
     // 쓰기 전에 감사 기록을 먼저 남깁니다. 남기지 못하면 쓰지 않습니다.
     if (!await audit(deps, caller, wanted.id, 'started', null)) return fail(response, 503, 'AUDIT_UNAVAILABLE');
@@ -120,7 +131,7 @@ async function restoreInner(request, response, deps) {
       return fail(response, 502, 'RESTORE_FAILED');
     }
     await audit(deps, caller, wanted.id, 'restored', current ? 'updated' : 'created');
-    return json(response, 200, { restored: true, created: !current, ...summary });
+    return json(response, 200, { applied: true, restored: true, created: !current, ...summary });
   } catch {
     console.error('restore_request_failed');
     await audit(deps, caller, wanted.id, 'failed', 'upstream_error');

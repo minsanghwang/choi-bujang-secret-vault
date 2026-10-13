@@ -63,14 +63,14 @@ const world = (extra = {}) => fakeDb({
   backups: [backupRow(), { ...backupRow({ note_id: A_NOTE, owner_id: A, title: 'A 메모', content: 'a 내용' }), content_sha256: noteHash('A 메모', 'a 내용') }], ...extra });
 const real = db => db.tables.defense_restore_audit.filter(r => r.outcome !== 'trace');
 const post = (db, headers, body, method = 'POST') => call({ method, headers, body }, { verify, fetch: db.fetch });
-const want = (extra = {}) => ({ id: B_NOTE, ownerId: B, contentSha256: GOOD, ...extra });
+const want = (extra = {}) => ({ id: B_NOTE, ownerId: B, contentSha256: GOOD, dryRun: false, ...extra });
 
 test('B가 자기 메모 한 건을 복원하면 ID·소유자·내용 해시가 사본과 같고 다른 메모는 그대로다', () => withEnv({}, async () => {
   const db = world();
   const others = JSON.stringify(db.tables.defense_notes.filter(r => r.id !== B_NOTE));
   const res = await post(db, asB, want());
   assert.equal(res.status, 200);
-  assert.deepEqual(res.body, { restored: true, created: false, id: B_NOTE, ownerId: B, contentSha256: GOOD });
+  assert.deepEqual(res.body, { applied: true, restored: true, created: false, id: B_NOTE, ownerId: B, contentSha256: GOOD });
   const live = db.tables.defense_notes.find(r => r.id === B_NOTE);
   assert.equal(noteHash(live.title, live.content), GOOD);                      // 내용 해시가 사본과 같음
   assert.equal(live.owner_id, B);                                                // 소유자가 사본과 같음
@@ -92,13 +92,38 @@ test('메모가 지워진 상태에서는 사본의 ID·소유자·위치로 한
   assert.equal(db.tables.defense_notes.length, 3);
 }));
 
-test('dryRun은 쓰지 않고 복원 대상 한 건과 현재 상태만 보여 준다', () => withEnv({}, async () => {
+test('미리보기는 쓰지 않고 복원할 사본 버전과 바뀔 항목, 실제 복원에 보낼 확인값만 보여 준다', () => withEnv({}, async () => {
   const db = world();
+  db.tables.defense_notes_backup[0].backup_id = 'cccccccc-0000-4000-8000-000000000001';
+  db.tables.defense_notes_backup[0].backed_up_at = '2026-10-13T05:14:49Z';
   const before = JSON.stringify(db.tables.defense_notes);
-  const res = await post(db, asB, want({ dryRun: true }));
-  assert.deepEqual(res.body, { dryRun: true, id: B_NOTE, ownerId: B, contentSha256: GOOD, liveExists: true, liveMatchesCopy: false });
+  for (const body of [want({ dryRun: true }), { id: B_NOTE }, want({ dryRun: undefined })]) {
+    const res = await post(db, asB, body);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { applied: false, dryRun: true, id: B_NOTE, ownerId: B, contentSha256: GOOD,
+      backup: { id: 'cccccccc-0000-4000-8000-000000000001', takenAt: '2026-10-13T05:14:49Z', verified: true },
+      liveExists: true, liveMatchesCopy: false, changes: { create: false, title: true, content: true }, willWrite: true,
+      confirm: { dryRun: false, ownerId: B, contentSha256: GOOD } });
+    assert.ok(!JSON.stringify(res.body).includes(SECRET_TEXT));
+  }
   assert.equal(JSON.stringify(db.tables.defense_notes), before);
   assert.ok(db.calls.every(c => c.table !== 'defense_notes' || c.method === 'GET'));
+  // 이미 사본과 같으면 바뀔 항목이 없다고 알려 준다.
+  const same = world();
+  Object.assign(same.tables.defense_notes.find(r => r.id === B_NOTE), { title: 'B 원래 제목', content: SECRET_TEXT });
+  assert.deepEqual((await post(same, asB, { id: B_NOTE })).body.changes, { create: false, title: false, content: false });
+}));
+
+test('실제 복원에는 소유자와 내용 해시 확인값이 모두 있어야 하고, 없으면 쓰지 않는다', () => withEnv({}, async () => {
+  const db = world();
+  const before = JSON.stringify(db.tables.defense_notes);
+  for (const body of [{ id: B_NOTE, dryRun: false }, { id: B_NOTE, ownerId: B, dryRun: false }, { id: B_NOTE, contentSha256: GOOD, dryRun: false }]) {
+    const res = await post(db, asB, body);
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.equal(res.headers.get('x-deny-reason'), 'confirmation_required');
+  }
+  assert.equal(JSON.stringify(db.tables.defense_notes), before);
+  assert.equal(real(db).length, 0);
 }));
 
 test('다른 사람(A)이 B의 메모를 복원하려 하거나 강사가 아니면 사본을 읽기 전에 403이다', () => withEnv({}, async () => {
@@ -172,11 +197,12 @@ test('감사 기록을 남기지 못하면 쓰지 않고, 감사 표에는 지�
   assert.ok(ok.calls.filter(c => c.table === 'defense_restore_audit').every(c => c.method === 'POST'));
 }));
 
-test('id만 보내도 로그인한 본인의 메모를 복원하고, noteId도 같은 뜻으로 받는다', () => withEnv({}, async () => {
+test('미리보기에서 받은 확인값을 그대로 보내면 한 건이 복원되고, noteId도 같은 뜻으로 받는다', () => withEnv({}, async () => {
   const db = world();
-  const res = await post(db, asB, { id: B_NOTE });
-  assert.equal(res.status, 200);
-  assert.deepEqual(res.body, { restored: true, created: false, id: B_NOTE, ownerId: B, contentSha256: GOOD });
+  const preview = await post(db, asB, { id: B_NOTE });
+  const done = await post(db, asB, { id: B_NOTE, ...preview.body.confirm });
+  assert.equal(done.status, 200);
+  assert.deepEqual(done.body, { applied: true, restored: true, created: false, id: B_NOTE, ownerId: B, contentSha256: GOOD });
   const live = db.tables.defense_notes.find(r => r.id === B_NOTE);
   assert.equal(noteHash(live.title, live.content), GOOD);
   const alias = world();
