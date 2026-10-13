@@ -10,6 +10,10 @@ export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const stable = value => JSON.stringify(value);
 
+// 검증한 사본의 기대 해시를 해시 목록(MANIFEST.json)과 별개로 코드에 고정합니다.
+// 사본과 목록을 함께 바꿔도 이 값과 다르면 중단하고, 새 버전을 인정하려면 이 값을 사람이 직접 고쳐야 합니다.
+export const PINNED_SHA256 = Object.freeze({ v1: '364f5a32af39e6d2a8b3730cc5a2aef0d206fafe3c0fb8e4068c8902b29aaf0f' });
+
 export class PolicyError extends Error {}
 const stop = message => { throw new PolicyError(message); };
 
@@ -22,6 +26,7 @@ export async function loadVerified(root, version = null) {
   if (!entries.length) stop(version ? `검증한 정책 사본에 ${version} 버전이 없습니다. 중단합니다.` : '검증한 정책 사본이 목록에 없습니다. 중단합니다.');
   const [name, item] = entries.at(-1);
   if (!/^[A-Za-z0-9._-]+\.json$/u.test(name) || !/^[0-9a-f]{64}$/u.test(item.sha256 ?? '')) stop('해시 목록 항목이 맞지 않습니다. 중단합니다.');
+  if (PINNED_SHA256[item.version] !== item.sha256) stop('해시 목록의 값이 코드에 고정한 기대 해시와 다르거나 고정한 적 없는 버전입니다(검증 실패). 중단합니다.');
   let bytes;
   try { bytes = await readFile(join(root, 'policy', 'verified', name)); } catch { stop(`검증한 정책 사본 ${name} 파일이 없습니다. 중단합니다.`); }
   if (sha256(bytes) !== item.sha256) stop('정책 사본의 해시가 목록과 다릅니다(검증 실패). 중단합니다.');

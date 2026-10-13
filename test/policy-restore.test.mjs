@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
 import { RULE_IDS } from '../src/decider.mjs';
-import { applyRestore, diffPolicy, loadTestPolicy, loadVerified, planRestore, PolicyError, reloadVerified } from '../src/policy-restore.mjs';
+import { applyRestore, diffPolicy, loadTestPolicy, loadVerified, planRestore, PolicyError, reloadVerified, sha256 } from '../src/policy-restore.mjs';
 
 const run = promisify(execFile);
 const REPO = new URL('..', import.meta.url).pathname;
@@ -106,5 +106,25 @@ test('쓰기 직전에 사본을 다시 읽어 검증하고, 그 사이 바뀌�
     assert.equal((await reloadVerified(dir, first)).sha256, first.sha256);                        // 그대로면 통과
     await writeFile(join(dir, 'policy', 'verified', 'policy-v1.json'), '{"schema":"aleph.policy.v1","version":"v1","services":{}}\n');
     await assert.rejects(reloadVerified(dir, first), /해시가 목록과 다릅니다/u);                    // 검증 뒤에 사본이 바뀜
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('사본과 해시 목록을 함께 바꿔도 코드에 고정한 기대 해시와 다르면 중단한다', async () => {
+  const dir = await sandbox();
+  try {
+    const copy = join(dir, 'policy', 'verified', 'policy-v1.json');
+    const forged = JSON.parse(await readFile(copy, 'utf8'));
+    forged.services.notes.zoneRoutes['PUT /notices/:id'] = 'allow';                              // 변조된 사본
+    const bytes = `${JSON.stringify(forged, null, 2)}\n`;
+    await writeFile(copy, bytes);
+    const listFile = join(dir, 'policy', 'verified', 'MANIFEST.json');
+    const manifest = JSON.parse(await readFile(listFile, 'utf8'));
+    manifest.files['policy-v1.json'].sha256 = sha256(Buffer.from(bytes));                        // 목록도 같이 바꿔 스스로는 일관됨
+    await writeFile(listFile, JSON.stringify(manifest, null, 2));
+    await assert.rejects(loadVerified(dir), /고정한 기대 해시/u);
+    const file = join(dir, 'policy', 'test-policy.json');
+    const before = await readFile(file, 'utf8');
+    await assert.rejects(run('node', [join(REPO, 'scripts', 'policy-restore.mjs'), '--apply', '--confirm', sha256(Buffer.from(bytes)).slice(0, 12), '--test-policy', file]).catch(error => { assert.equal(error.code, 1); throw new PolicyError(error.stderr); }), PolicyError);
+    assert.equal(await readFile(file, 'utf8'), before);                                         // 시험 정책은 그대로
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
