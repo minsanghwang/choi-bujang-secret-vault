@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (![5, 6, 7, 8, 9, 10].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (![5, 6, 7, 8, 9, 10, 11].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -49,6 +49,10 @@ export async function runAttackChecks(config) {
   const denied = result => [401, 403].includes(result.status) && result.json && noteCount(result.data) === 0
     && typeof result.data?.error === 'string';
   const describe = (result, ok) => `${ok ? '거부됨' : '거부되지 않음'} (HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}, 메모 ${noteCount(result.data)}건)`;
+
+  // 11단계: 로그인 없이 기기 승인 상태를 물으면 거부되어야 하고, 앱 설정(manifest)은 공개되어야 합니다. 이 두 요청만 실제로 보냅니다.
+  const deviceAnonymous = config.step >= 11 ? await send(new URL('/api/device', app)) : null;
+  const manifest = config.step >= 11 ? await send(new URL('/manifest.webmanifest', app)) : null;
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
   const page = await fetch(app, { redirect: 'error', signal: AbortSignal.timeout(10000) });
@@ -107,5 +111,15 @@ export async function runAttackChecks(config) {
     { attackId: 'post_restore_regression',
       expected: '복구 뒤 1~9단계의 정상 요청은 허용되고 B의 A 자료 요청 같은 금지 요청은 다시 거부됨',
       observed: '미실행: README의 복구 뒤 재확인 순서를 아직 실행하지 않음' }] : []),
+    // 11단계: 승인 요청·승인 뒤 화면 열림은 로그인 계정과 운영 측 승인이 필요해 학생 점검이 보내지 않습니다.
+    ...(config.step >= 11 ? [{ attackId: 'device_status_without_login',
+      expected: '로그인 없이 /api/device를 부르면 401 또는 403과 JSON 오류 문구이고 승인 상태가 나오지 않음',
+      observed: `비로그인 /api/device ${describe(deviceAnonymous, denied(deviceAnonymous) && deviceAnonymous.data?.state === undefined)}` },
+    { attackId: 'manifest_public',
+      expected: '/manifest.webmanifest가 공개되고 앱 이름이 있음(설치 표시만으로 기기가 확인된 것은 아님)',
+      observed: `${manifest.status === 200 && manifest.json && typeof manifest.data?.name === 'string' ? '앱 설정이 공개됨' : '앱 설정을 확인하지 못함'} (HTTP ${manifest.status}, ${manifest.json ? 'JSON' : 'JSON 아님'})` },
+    { attackId: 'device_approval_gate',
+      expected: '승인 전 기기에는 자료가 없고, 서버가 승인한 기기에서만 기존 화면이 열림',
+      observed: '미실행: 이 점검은 로그인 계정과 운영 측 승인 없이 실행되어 POST /api/device를 보내지 않음. 로컬 시험은 가짜 DB와 가짜 화면으로만 확인함' }] : []),
   ];
 }

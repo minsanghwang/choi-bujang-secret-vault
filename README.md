@@ -1,6 +1,30 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 10단계 「백업에서 자료실을 되살립니다」
+## 현재 상태: 11단계 「나만의 접속 앱을 완성합니다」
+
+## 11단계 접속 앱·기기 승인 요약 (서비스·경로)
+
+| 항목 | 내용 |
+|---|---|
+| 서비스 | `notes` 자료실 화면(설치형 웹앱) |
+| 앱 설정 | `public/manifest.webmanifest`(앱 이름 「BYTE BACK 자료실」, `standalone`, 아이콘 3개), `public/offline.html`(오프라인 안내), `public/sw.js`(최소 서비스 워커) |
+| 기기 승인 경로 | `GET /api/device`(상태 조회), `POST /api/device`(승인 요청). 구현 `api/device.js`, `src/device-service.mjs` |
+| 부르는 사람 | 서버가 검증한 로그인 사용자만(비로그인은 `401`) |
+| 상태 | `none`(요청 전) → `pending`(대기) → `approved`(승인) / `revoked`(해제). 승인·해제는 **운영 측이 DB(`defense_devices`)에서만** 바꿉니다. 화면 버튼·요청 본문·쿼리·헤더로는 승인되지 않고, 본문에 `status` 같은 값을 보내면 `400`입니다 |
+| 브라우저에 두는 것 | 서버가 준 읽을 수 없는(`HttpOnly`·`Secure`·`SameSite=Strict`) 쿠키 `__Host-aleph-dv` 하나(서버가 만든 무작위 핸들). DB에는 그 SHA-256 지문만 저장하고 핸들 원문은 응답·로그·DB 어디에도 없습니다. 기기 키·토큰·승인 상태를 `localStorage` 등에 넣지 않습니다 |
+| 승인 전 화면 | 로그인해도 승인 전(`none`·`pending`·`revoked`·확인 실패)에는 자료 영역을 숨기고 `/api/notes`를 부르지 않습니다. 서버가 `approved`라고 답한 뒤에만 기존 자료실을 엽니다 |
+| 설치 표시 | 앱 설치·서비스 워커 등록은 기기 확인이 아닙니다. 화면과 manifest에 그렇게 적었습니다 |
+| 서비스 워커 | 인터넷이 끊겼을 때 오프라인 안내만 보여 줍니다. `/api/*`와 `/aleph.json`은 가로채지도 보관하지도 않습니다 |
+| SQL | `supabase/step11-devices.sql`(① 표 만들기 ② 확인, 승인·해제 문장은 주석). **실행함**: 표 `defense_devices` 생성, RLS 켜짐, `anon`·`authenticated` 권한 모두 `false`, 0행임을 DB에서 읽어 확인했습니다 |
+| 운영 측 승인 방법 | SQL Editor에서 `select id, owner_id, status, requested_at from public.defense_devices order by requested_at desc;`로 확인한 뒤 `update public.defense_devices set status = 'approved', decided_at = now() where id = '<deviceId>';` |
+| 판정기 | `src/decider.mjs`는 바꾸지 않았습니다. 계약(`docs/DECIDER_REQUEST.md`)에 기기 승인 값이 없고 `request.device.approval`을 만들어 쓰지 않습니다. `RULE_IDS`도 그대로입니다 |
+| 한계 | 이 승인 상태는 **앱 화면이 자료를 열지 말지 정하는 표시**이고, 운영 엔진의 기기 등록(`deviceRegistered`)과 판정을 대신하지 않습니다. 기존 보호 API(`/api/notes` 등)의 로그인·소유자 확인은 그대로이며 이번에 바꾸지 않았습니다. 쿠키 핸들은 기기 하드웨어에 묶인 키가 아니라서, 쿠키가 통째로 복사되면 같은 기기로 보일 수 있습니다. `/api/device`는 판정기 구역 표에 없어서(기본 거부) 엔진을 거치는 경로로 허용되려면 운영 측 규칙이 별도로 필요하며, `allowedRoutes`에는 넣지 않았습니다 |
+
+**11단계 다시 실행하는 방법**
+- 로컬 시험(배포 증명 아님): `npm run test:device`(기기 승인 API 7개 + 앱 설정·서비스 워커·가짜 화면 8개). 가짜 화면 시험은 실제 `public/index.html` 코드를 가짜 DOM으로 실행해, 승인 전(`none`·`pending`·`revoked`)과 확인 실패·모르는 값에서는 `/api/notes`를 부르지 않고 `approved`에서만 부르는지 봅니다.
+- 배포 확인(직접 실행, **아직 미실행**): ① 운영 주소에서 로그인 → 「이 기기의 승인 상태」가 `아직 승인을 요청하지 않았습니다`이고 자료가 보이지 않아야 합니다. ② 「승인 요청」 → `승인 대기 중`이고 자료는 계속 없어야 합니다. ③ 운영 측이 위 `update`로 승인 → 「상태 새로 확인」 → `승인된 기기`와 기존 자료실이 열려야 합니다. 거부되어야 할 것: 비로그인 `GET /api/device`는 `401`, 본문에 `{"status":"approved"}`를 보내는 `POST /api/device`는 `400`이고 상태가 바뀌지 않습니다.
+
+## 10단계 「백업에서 자료실을 되살립니다」 기록 (통과함)
 
 ## 10단계 복구 경로 요약 (서비스·경로)
 
@@ -39,7 +63,7 @@
    - 거부: A 계정으로 B의 메모를 요청하면 `403 not_owner`, 해시를 바꾸면 `404`, 로그인이 없으면 `401`.
 4. 시험: `npm run test:restore`(복원 16건·정책 5건, 가짜 DB·임시 폴더). 실제 DB·배포·심판 판정을 증명하지 않습니다.
 
-**복구 뒤 1~9단계 재확인 순서 (모두 아직 실행하지 않았습니다 = 미실행)**
+**복구 뒤 1~11단계 재확인 순서 (모두 아직 실행하지 않았습니다 = 미실행)**
 
 복구 직후 아래 순서로 확인하고, 실제로 실행한 것만 결과를 적습니다.
 
@@ -55,6 +79,7 @@
 | 8 | 8단계: 공지 목록·일반 학생의 공지 수정 | 공지 목록 `200` | 공지 수정 `403 instructor_required` | **미실행**(복구 뒤 재확인 전) |
 | 9 | 9단계: 정상 기기·폭주 조회 사건 | 정상은 `observe` | 10분 120건 초과는 `propose_revocation` | **미실행**(심판이 보냄, 로컬은 `detect:test`만) |
 | 10 | 10단계: B의 메모 한 건 복원 | `200`, 세 값 일치 | A의 요청 `403`, 해시 불일치 `404`/`409` | 정상 복원은 배포에서 실행함(아래 기록). 해시 불일치는 배포에서 B로 틀린 해시를 보내 `404 backup_not_found`(쓰기 없음)를 확인함. A가 B의 메모를 복원하려는 요청은 배포에서 `403 not_owner`로 거부됨을 확인함. 로그인 없음은 **미실행**(가짜 DB 시험만) |
+| 11 | 11단계: 승인 전 기기·승인된 기기 | 승인된 기기에서 기존 자료실이 열림 | 승인 전에는 자료 영역이 숨겨지고 `/api/notes`를 부르지 않음, 비로그인 `/api/device`는 `401` | 가짜 DB·가짜 화면 시험만 실행함. 배포에서의 승인 요청·운영 측 승인·승인 뒤 화면 열림은 **미실행** |
 
 **10단계 실제 실행 기록 (2026-10-13, 배포 db506d8, 직접 실행한 것만)**
 
@@ -79,7 +104,7 @@
 - 새 주소 `/api/notices`(`api/notices.js`, `GET` 공지 목록, 로그인한 사용자 모두)와 `/api/notices/:id`(`api/notices/[id].js`): `GET` 읽기, `PUT` 수정(강사만)만 있고 추가·삭제는 없습니다(405). 구역 열이 없는 DB에서는 공지 목록이 빈 배열입니다. 공지는 제목·내용만 바꾸며 소유자와 구역은 바뀌지 않습니다.
 - 자료 API의 최종 확인: 검증된 사용자 ID(`src/verify-login.mjs`)와 DB에 **저장된** 행의 구역·`owner_id`, 서버 환경변수 `INSTRUCTOR_USER_IDS`(강사 사용자 UUID를 쉼표로 구분, 비어 있으면 강사 없음)만 비교합니다. 화면 메뉴와 요청 본문·헤더의 `role`·`owner_id`·`zone`은 읽지 않습니다. 개인 메모 주소로 공지를, 공지 주소로 개인 메모를 요청하면 강사여도 `403 wrong_zone`입니다.
 - 판정기 `src/decider.mjs`(`RULE_IDS`: `device_registered`, `zone_access`, `step_up_required`)에 구역 규칙 `zone_access`가 있습니다. 엔진이 확인한 `service`·`method`·`path`·`route`가 구역 표의 한 줄과 정확히 맞을 때만 통과합니다. 표는 프롬프트가 요구한 세 규칙, 즉 자기 메모 읽기(`GET /notes/:id`)·수정(`PUT /notes/:id`)과 강사 공지 수정(`PUT /notices/:id`, 허용하지 않음)뿐이며, 메모 목록·추가·삭제도 판정기 표에는 없습니다(자료 API는 그대로 처리합니다). 그 밖에 표에 없는 경로·메서드와 `route`의 불일치·쿼리가 붙은 요청(`queryLength` ≠ 0)·`:id` 자리의 `export` 같은 기능 이름·더 깊은 경로는 `deny`와 `zone_not_allowed`입니다. 자료는 쿼리가 아니라 경로의 ID 한 칸으로만 고르고, 그 ID는 UUID이거나 7단계 엔진 예시의 `demo`(자기 메모의 정상 요청)일 때만 인정하고, 그 밖의 이름(`other-1`, `learner_…`, `notice…` 등)은 모두 `deny`·`zone_not_allowed`입니다. 요청 계약에 소유자 값이 없어서, 판정기는 허용한 메모 경로를 처음 쓴 사용자(`subjectId`)를 소유 기록(프로세스 메모리, 최대 5000건)에 남기고 같은 경로를 다른 사용자가 요청하면 `deny`·`zone_not_allowed`로 거부합니다. 먼저 접근한 쪽이 주인이 되는 방식이고 서버가 다시 뜨면 기록이 사라지므로 최종 소유자 확인은 자료 API가 합니다. 공지 읽기·수정(`GET·PUT /notices/:id`)은 요청 계약에 강사 역할 값이 없어 판정기가 허용하지 않습니다(공지 읽기는 자료 API가 로그인한 사용자에게 허용하지만 판정기 표에는 없습니다). 6단계 기기 규칙과 7단계 추가 확인 규칙은 그대로이고 순서는 기기 → 구역 → 추가 확인입니다.
-- `aleph.config.json`: `step` 10, `restoreRoute` `POST /api/restore`. `allowedRoutes`는 구현한 메서드와 경로를 `GET /api/notes`처럼 한 줄씩 적습니다(`GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`, `GET /api/notices`, `GET·PUT /api/notices/:id`). 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)과 9단계 탐지·회수(`doppelganger_burst_revocation`)를 미실행으로 기록합니다.
+- `aleph.config.json`: `step` 11, `restoreRoute` `POST /api/restore`. `allowedRoutes`는 구현한 메서드와 경로를 `GET /api/notes`처럼 한 줄씩 적습니다(`GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`, `GET /api/notices`, `GET·PUT /api/notices/:id`). 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)과 9단계 탐지·회수(`doppelganger_burst_revocation`)를 미실행으로 기록합니다.
 
 **다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
 
