@@ -295,6 +295,7 @@ test('step 12 attack check tags every request it really sends with its attackId 
   try {
     globalThis.fetch = async (url, options = {}) => {
       const path = new URL(url).pathname;
+      if (new URL(url).search.startsWith('?c=')) return { status: 401, headers: { get: () => null }, json: async () => ({}), text: async () => '' };   // 임시 관찰 요청은 점검이 아님
       sent.push({ path, headers: options.headers ?? {}, evidence: options.alephEvidence });
       const plain = (status, type, data) => ({ status, headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
         json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) });
