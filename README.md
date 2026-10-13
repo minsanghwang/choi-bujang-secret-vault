@@ -1,26 +1,27 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 5단계 「자료 요청을 서버 한곳으로 모읍니다」
+## 현재 상태: 6단계 「등록한 기기만 자료실에 들어옵니다」
 
 **작동하는 기능**
 
-- 브라우저의 메모 읽기·추가·수정·삭제는 모두 Vercel 서버 함수(`/api/notes`, `/api/notes/:id`)로만 갑니다. 로그인·로그아웃·세션 확인도 같은 주소의 서버 함수(`/api/auth/login`, `/api/auth/logout`, `/api/auth/session`, 코드는 `src/auth-service.mjs`)로 갑니다. `public/index.html`에는 Supabase 주소도 키도 없고, 브라우저는 Supabase를 직접 부르지 않습니다. 로그인 토큰은 서버가 심는 `HttpOnly`·`Secure`·`SameSite=Strict` 쿠키(`__Host-aleph-at`, `__Host-aleph-rt`)에만 있어 화면 코드가 읽을 수 없습니다. `Authorization` 헤더가 있으면 그것을 먼저 검사하고, 쿠키로 인증한 쓰기 요청은 같은 사이트에서 온 것만 허용합니다(아니면 `403 CROSS_SITE_BLOCKED`).
-- 서버 함수는 4단계 그대로입니다. 모든 요청의 토큰을 `src/verify-login.mjs`로 검사하고(없거나 틀리면 `401 {"error":"LOGIN_REQUIRED"}`), 검증된 사용자 ID와 행의 `owner_id`를 비교해 본인 메모만 허용합니다(남의 것·주인 없는 행 403, 없는 번호 404, 소유자 변경 시도 403). 서버는 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`(서버 전용)로 `defense_notes`를 읽고 씁니다.
-  - `GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id` (본문 `{title, body}`, 응답 `{id,title,body}`)
-- `aleph.config.json`: `step` 5, `allowedRoutes`(`/api/notes`, `/api/notes/:id`), `identityProvider`(로그인 발급자), **`originalApiUrl`**(쿼리 없는 원본 자료 HTTPS 경로 `https://…supabase.co/rest/v1/defense_notes`), `database`(공개 접속 정보: Project URL·publishable key·테이블 이름. 서버 전용 키는 없습니다). `/aleph.json`은 계속 만들어지고 5단계부터 `originalApiUrl`과 `database`도 담습니다.
-- `/data.json`은 `{"notes": []}`입니다. `vercel.json`의 `headers`가 모든 응답에 `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: no-referrer`를 붙입니다. 운영 배포의 `/aleph.json`은 `publicAppUrl`에 로그인 없이 열리는 대표 주소를 적습니다.
-- `api/ai.js`, `api/threat-intel.js`, `src/decider.mjs`, `src/detect.mjs`, `src/verify-login.mjs`는 그대로입니다.
+- 판정기 `src/decider.mjs`의 `decide(request)`에 규칙 `device_registered` 하나가 있습니다(`RULE_IDS`는 이 이름만 담습니다). 요청 계약(`docs/DECIDER_REQUEST.md`)의 `deviceRegistered`가 `true`일 때만 `allow`(`approved`)이고, `false`·값 없음·그 밖의 값은 `deny`와 이유 코드 `device_not_registered`입니다. `request.device`·`request.identity` 같은 계약에 없는 값은 쓰지 않습니다. 응답은 `schema, requestId, decision, reasonCode, ruleIds` 다섯 항목뿐입니다.
+- 이번 단계에 새로 설치할 접속 프로그램은 없습니다. 인증서·CA·서명 키·기기 개인키를 만들거나 Git에 넣지 않았습니다. 기존 자료실 주소와 브라우저 화면, 5단계까지의 기능(서버 로그인, `/api/notes`의 소유자 검사, 원본 직접 접근 차단 SQL 제안)은 그대로입니다.
+- `aleph.config.json`: `step` 6. 나머지 설정은 5단계와 같습니다.
+- `npm run bundle`의 자기 점검(`src/attack-check.mjs`)은 5단계 요청을 그대로 보내고, 미등록 기기 공격(`unregistered_device_request`)은 심판이 맡으므로 **미실행**으로 기록합니다.
 
-**다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
+**확인 순서**
 
-1. 4단계까지의 준비(계정 A·B, `supabase/step4-owner-link.sql`, Vercel 환경변수 `SUPABASE_URL`·`SUPABASE_SECRET_KEY`)가 돼 있어야 합니다. `supabase/step4-rls-grants.sql`의 ②(authenticated에 권한 부여)는 5단계와 반대이니 실행하지 마세요.
-2. `supabase/step5-revoke-direct.sql`을 ①②③ 블록으로 나눠 한 블록씩 Run 합니다. `PUBLIC`·`anon`·`authenticated`의 직접 권한을 거두고 `service_role`만 남깁니다. 적용 전후에 `has_table_privilege`와 `information_schema.role_table_grants`로 대조합니다. 정상은 `anon`과 `authenticated`가 네 가지 모두 `granted = false`이고, 두 번째 조회가 0행인 것입니다.
-3. 시험: `npm run test:r5 && npm run test:step2 && npm run test:package` (가짜 응답과 메모리 DB로 도는 시험이며 실제 DB·배포를 증명하지 않습니다.)
-4. 일반 창에서 A로 로그인해(로그아웃 상태에서 `/api/auth/session`은 `401` JSON이어야 합니다) 메모 읽기·추가·수정·삭제가 되는지, 시크릿 창에서 B로 로그인했을 때 A의 메모가 보이지 않는지, 로그인 없이 `curl -s -i https://<배포 주소>/api/notes`가 `401`과 JSON 오류 문구인지 확인합니다.
-5. 공개 키로 원본 저장소를 직접 불러 봅니다(메모가 없어야 합니다). 권한을 거둔 뒤에는 `401` 또는 `403`(`permission denied`)이 옵니다.
-   `curl -s -i -H "apikey: <publishable key>" "<originalApiUrl>"`
+1. `npm run decider:test`를 실행합니다.
+2. 정상 출력: `통과 · 등록 기기의 정상 요청`(allow)과 `통과 · 미등록 기기의 가상 요청`(deny, `device_not_registered`)이 모두 보이고 종료 코드가 0입니다. 하나라도 `확인 필요`이면 6단계가 아닙니다.
+3. 이 명령은 가상 요청 연습이며 실제 심판 판정이나 반 엔진의 접속 차단 증거가 아닙니다. 미등록 기기 공격은 심판이 판정기에 따로 보냅니다.
+4. 시험 전체: `npm run test:r5 && npm run test:step2 && npm run test:package`
+5. 기존 화면: 등록한 기기의 브라우저에서 배포 주소를 열어 A로 로그인하고 메모 읽기·추가·수정·삭제가 되는지 봅니다.
+
+참고: `npm run fixture:7`은 7단계의 연습이라 지금은 복합 이상 사건이 `allow`로 나와 실패하는 것이 정상입니다.
 
 ### 이 단계에 남은 약점
+
+- 판정기 규칙은 `deviceRegistered` 하나만 봅니다. 재인증(`stepUp`)·위치·최근 사건은 아직 보지 않아, 등록된 기기에서 오는 이상 접속은 막지 못합니다. 판정기 연습은 가상 요청이며 실제 엔진 연결은 증명하지 않습니다.
 
 - `supabase/step5-revoke-direct.sql`은 제안이고, 적용 여부와 결과는 이 저장소가 증명하지 않습니다. 실행 전에는 DB의 실제 권한 상태를 `has_table_privilege`로 직접 확인해야 합니다. 원본 직접 요청은 심판이 `anon` 키로 확인하고, 로그인한 사용자 토큰으로 직접 부르는 `authenticated` 경로는 심판이 재현하지 않는 범위입니다.
 - 서버 함수 하나가 모든 메모 접근을 맡습니다. 이 함수의 로그인·소유자 검사가 깨지면 `service_role`이 RLS를 우회하므로 그대로 노출됩니다. 시험은 가짜 응답과 메모리 DB로만 했습니다.

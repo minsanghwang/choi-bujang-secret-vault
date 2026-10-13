@@ -110,3 +110,20 @@ test('step 5 attack check adds the direct anon request and leaves the login chec
     globalThis.fetch = originalFetch;
   }
 });
+
+test('step 6 attack check keeps the step 5 requests and leaves the device attack to the judge', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => (new URL(url).pathname === '/'
+      ? new Response('<html>login</html>', { status: 200 })
+      : Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 }));
+    const step6 = { ...config, step: 6, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
+    const results = await runAttackChecks(step6);
+    assert.equal(results.at(-1).attackId, 'unregistered_device_request');
+    assert.match(results.at(-1).observed, /^미실행/u);
+    await assert.rejects(runAttackChecks({ ...step6, step: 7 }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

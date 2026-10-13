@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (config.step !== 5) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (![5, 6].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -84,5 +84,9 @@ export async function runAttackChecks(config) {
       observed: '미실행: 이 점검은 B 로그인 계정 정보 없이 실행되어 B 요청을 보내지 않음' },
     { attackId: 'b_changes_a_note', expected: 'B 로그인으로 A의 메모를 수정·삭제하거나 소유자를 바꾸려 하면 거부됨',
       observed: '미실행: 이 점검은 B 로그인 계정 정보 없이 실행되어 B 요청을 보내지 않음' },
+    // 6단계: 미등록 기기 공격은 심판이 판정기에 가상 요청으로 보냅니다. 학생 점검은 이 요청을 보내지 않습니다.
+    ...(config.step >= 6 ? [{ attackId: 'unregistered_device_request',
+      expected: '등록되지 않은 기기의 요청은 판정기가 deny·device_not_registered로 거부함',
+      observed: '미실행: 이 요청은 심판이 보내며, 학생 점검은 npm run decider:test의 가상 요청 연습만 함' }] : []),
   ];
 }
