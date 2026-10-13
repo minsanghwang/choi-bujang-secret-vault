@@ -22,8 +22,9 @@ const printable = value => (typeof value === 'string' && value ? value.replace(/
 export const uaOf = request => printable(request.headers?.['user-agent']);
 export const qsOf = request => { const url = typeof request.url === 'string' ? request.url : ''; const at = url.indexOf('?'); return at < 0 ? null : printable(url.slice(at + 1)); };
 export function attackIdOf(request) {
-  const value = request.headers?.['x-attack-id'];
-  return typeof value === 'string' && ATTACK_ID.test(value) ? value : null;
+  const raw = request.headers?.['x-attack-id'];
+  const value = typeof raw === 'string' ? raw.split(',')[0].trim() : null;   // 같은 이름이 둘 합쳐져 오면(값, 값) 첫 값만 읽습니다
+  return value && ATTACK_ID.test(value) ? value : null;
 }
 export function extraHeaderNames(request) {
   const names = Object.keys(request.headers ?? {}).map(name => name.toLowerCase()).filter(name => /^[a-z0-9-]{1,40}$/u.test(name) && !isCommon(name)).sort();

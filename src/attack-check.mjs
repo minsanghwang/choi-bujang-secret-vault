@@ -18,8 +18,12 @@ function appUrl(config) {
 // 서버 기록(요청 ID)과 이 결과를 같은 요청으로 대조할 수 있고, 요청을 보내지 않은 점검에는 붙일 것이 없어 미실행으로 남습니다.
 const uuid4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/gu, c => { const r = Math.floor(Math.random() * 16); return (c === 'x' ? r : (r & 3) | 8).toString(16); });
 const sentIds = {};
-// 헤더 이름은 소문자로 붙입니다(HTTP 헤더는 대소문자를 가리지 않지만, 기록 도구가 객체의 키를 그대로 읽는 경우를 위해).
-const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
+// 점검 이름 헤더는 소문자와 표준 표기(X-Attack-Id)를 모두 붙입니다(받는 쪽이 대소문자를 구분해 읽는 경우를 위해, HTTP 자체는 구분하지 않습니다).
+// 요청 ID는 한 번만 붙입니다(같은 이름이 둘이면 서버에서 값이 합쳐져 UUID가 깨집니다).
+const tagged = attackId => {
+  const requestId = uuid4(); sentIds[attackId] = requestId;
+  return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'X-Attack-Id': attackId, 'X-Aleph-Attack-Id': attackId, 'X-Request-Id': requestId };
+};
 
 // 우리 앱 요청의 주소에는 ?attackId=<점검 이름>을 붙입니다. 원본 저장소(Supabase) 주소에는 붙이지 않습니다(알 수 없는 조회 조건이 되므로).
 // 격리 환경의 URL에는 searchParams가 없을 수 있어서 주소를 문자열로만 만듭니다(같은 주소가 이미 ?를 가지면 &로 잇습니다).

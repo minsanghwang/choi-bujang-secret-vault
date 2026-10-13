@@ -346,10 +346,15 @@ test('step 12 attack check tags every request it really sends with its attackId 
       else assert.equal(item.search, '');                                                              // 원본 저장소 주소에는 붙이지 않음
     }
     for (const result of results) if (!sent.some(req => req.headers['x-attack-id'] === result.attackId)) assert.match(result.observed, /^미실행\(not_run\):/u, result.attackId);
-    for (const item of sent) assert.match(item.headers['x-request-id'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+    for (const item of sent) {                                                                           // 점검 이름 헤더는 소문자·표준 표기 모두, 요청 ID는 한 번만
+      const id = item.headers['x-attack-id'];
+      assert.deepEqual([item.headers['x-aleph-attack-id'], item.headers['X-Attack-Id'], item.headers['X-Aleph-Attack-Id']], [id, id, id]);
+      assert.equal(Object.keys(item.headers).filter(name => name.toLowerCase() === 'x-request-id').length, 1);
+    }
+    for (const item of sent) assert.match(item.headers['X-Request-Id'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
     for (const result of results) {
       const request = sent.find(item => item.headers['x-attack-id'] === result.attackId);
-      if (request) assert.ok(result.observed.endsWith(`[요청 ID ${request.headers['x-request-id']}]`), result.attackId);   // 결과의 요청 ID = 실제로 보낸 요청의 ID
+      if (request) assert.ok(result.observed.endsWith(`[요청 ID ${request.headers['X-Request-Id']}]`), result.attackId);   // 결과의 요청 ID = 실제로 보낸 요청의 ID
       else assert.match(result.observed, /^미실행/u, result.attackId);                                       // 보내지 않은 점검은 미실행
       assert.ok(result.observed.length <= 300 && result.expected.length <= 300);
     }

@@ -91,6 +91,9 @@ test('점검 이름 헤더(X-Attack-Id)와 평소와 다른 헤더의 이름만 
   const bad = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
   await bad.run({ method: 'GET', headers: { 'x-attack-id': 'Bad Id!<script>' } });
   assert.equal(bad.rows[0].attack_id, null);
+  const merged = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
+  await merged.run({ method: 'GET', headers: { 'x-attack-id': 'anonymous_api_notes_read, anonymous_api_notes_read' } });   // 같은 이름이 둘 합쳐져 와도 첫 값만 읽음
+  assert.equal(merged.rows[0].attack_id, 'anonymous_api_notes_read');
 }));
 
 test('새 열이 아직 없는 DB가 거부해도 그 열 없이 한 번 더 써서 기록이 끊기지 않는다', () => withEnv(async () => {
