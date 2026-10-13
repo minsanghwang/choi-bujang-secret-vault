@@ -23,8 +23,9 @@ const ZONE_ROUTES = Object.freeze({
 // 기능 이름이 자료 ID 자리에 들어오지 못하게 막습니다. (자료 ID는 쿼리가 아니라 경로 한 칸으로만 고릅니다)
 const RESERVED_IDS = new Set(['export', 'import', 'search', 'all', 'list', 'new', 'bulk', 'download', 'backup', 'admin', 'share']);
 // 공지·관리자 구역을 가리키는 ID는 메모 경로에서 거부합니다. (공지 ID로 메모 경로를 부르는 우회를 막음)
-const NOTICE_MARKED_ID = /^(notice|announce|teacher|instructor|admin)/iu;
-const USER_MARKED_ID = /^(learner|student|user|subject)[_-]/iu;
+// 표시는 ID 맨 앞뿐 아니라 어느 위치에 있어도 읽습니다. (예: note-of-learner_other, memo-notice-1)
+const NOTICE_MARKED_ID = /(notice|announce|teacher|instructor|admin)/iu;
+const USER_MARKED_TOKEN = /(?:learner|student|user|subject)[_-][A-Za-z0-9_-]*/giu;
 const ID_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
 
 function zoneAllowed(request) {
@@ -39,8 +40,10 @@ function zoneAllowed(request) {
   if (match[1] !== undefined && NOTICE_MARKED_ID.test(match[1])) return false;
   // 사용자를 가리키는 ID(learner_…, student_…, user_…, subject_…)는 요청한 사람의 subjectId로 시작할 때만 허용합니다.
   // 다른 사용자의 ID가 붙은 경로는 같은 모양이어도 거부합니다. 사용자 표시가 없는 ID는 이 검사로 판단하지 않습니다.
-  if (match[1] !== undefined && USER_MARKED_ID.test(match[1])
-      && !match[1].toLowerCase().startsWith(request.subjectId.toLowerCase())) return false;
+  // ID 안에 사용자 표시가 하나라도 있으면 모두 요청한 사람의 subjectId로 시작해야 합니다. (다른 사람 표시가 섞이면 거부)
+  const subject = request.subjectId.toLowerCase();
+  if (match[1] !== undefined
+      && [...match[1].matchAll(USER_MARKED_TOKEN)].some(token => !token[0].toLowerCase().startsWith(subject))) return false;
   return entry.allow;
 }
 

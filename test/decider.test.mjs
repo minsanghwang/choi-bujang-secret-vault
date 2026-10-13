@@ -132,6 +132,13 @@ test('사용자 ID가 붙은 경로는 요청한 본인 것만 허용한다', as
   assert.equal((await decide(own({ subjectId: 'LEARNER_FIXTURE' }))).decision, 'allow');
   assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/learner_fixture2-note', { subjectId: 'learner_fixture' }))).decision, 'allow');
   assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/student_fixture-note'))).decision, 'deny');
+  // 표시가 ID 앞쪽이 아닌 곳에 있어도 다른 사용자의 것이면 거부하고, 공지 표시도 어디 있든 거부한다.
+  for (const id of ['note-of-learner_other', 'memo-student_b-1', 'x_user-b', 'memo-notice-1', 'my-announce']) {
+    const res = await decide(withRoute('GET', 'GET /notes/:id', `/notes/${id}`));
+    assert.equal(res.decision, 'deny', id);
+    assert.equal(res.reasonCode, 'zone_not_allowed');
+  }
+  assert.equal((await decide(withRoute('PUT', 'PUT /notes/:id', '/notes/memo-learner_fixture-2'))).decision, 'allow');
   // 사용자 표시가 없는 ID(/notes/demo 같은 연습 요청)는 이 검사로 막지 않는다.
   assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/demo'))).decision, 'allow');
 });
