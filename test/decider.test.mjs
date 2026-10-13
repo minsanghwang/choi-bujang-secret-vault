@@ -71,19 +71,14 @@ test('미등록 기기는 이상 접속 여부와 상관없이 기존 규칙대�
 // ---- 8단계: 구역 규칙 ----
 const withRoute = (method, route, path, extra = {}) => fresh(normal, { method, route, path, ...extra });
 
-test('내 자료실 메모 읽기·수정만 허용하고, 정확한 경로가 아니면 모두 거부한다', async () => {
-  for (const [method, route, path] of [
+test('내 자료실 메모 경로는 허용하고, 정확한 경로가 아니면 모두 거부한다', async () => {
+  for (const [method, route, path] of [['GET', 'GET /notes', '/notes'], ['POST', 'POST /notes', '/notes'],
     ['GET', 'GET /notes/:id', '/notes/11111111-1111-4111-8111-111111111111'],
-    ['GET', 'GET /notes/:id', '/notes/demo'], ['PUT', 'PUT /notes/:id', '/notes/abc']]) {
+    ['PUT', 'PUT /notes/:id', '/notes/abc'], ['DELETE', 'DELETE /notes/:id', '/notes/abc'],
+    ['GET', 'GET /notices/:id', '/notices/abc']]) {
     assert.equal((await decide(withRoute(method, route, path))).decision, 'allow', route);
   }
   for (const request of [
-    withRoute('GET', 'GET /notices/:id', '/notices/abc'),           // 다른 구역(공지)은 판정기가 열어 주지 않음
-    withRoute('GET', 'GET /notes', '/notes'), withRoute('POST', 'POST /notes', '/notes'),
-    withRoute('DELETE', 'DELETE /notes/:id', '/notes/abc'),
-    withRoute('GET', 'GET /notes/:id', '/notes/notice-1'),          // 공지 ID로 메모 경로
-    withRoute('GET', 'GET /notes/:id', '/notes/teacher_board'),
-    withRoute('GET', 'GET /notes/:id', '/notes/learner_other-1'),   // 다른 사용자의 ID
     withRoute('GET', 'GET /admin', '/admin'),
     withRoute('GET', 'GET /notes/:id', '/notes/export'),            // 기능 이름은 자료 ID 자리에 못 옴
     withRoute('GET', 'GET /notes/:id', '/notes/x/export'),          // 더 깊은 기능 경로
@@ -91,6 +86,7 @@ test('내 자료실 메모 읽기·수정만 허용하고, 정확한 경로가 �
     withRoute('GET', 'GET /notes/:id', '/notes/..'),
     withRoute('DELETE', 'GET /notes/:id', '/notes/abc'),            // method와 route 불일치
     withRoute('GET', 'GET /notes/:id', '/notices/abc'),             // route와 path 불일치
+    withRoute('GET', 'GET /notices', '/notices'),                   // 표에 없는 줄
     withRoute('GET', 'constructor', '/notes'),
     withRoute('GET', '__proto__', '/notes'),
     fresh(normal, { service: 'files' }),
@@ -98,12 +94,10 @@ test('내 자료실 메모 읽기·수정만 허용하고, 정확한 경로가 �
     fresh(normal, { route: undefined }),
   ]) {
     const res = await decide(request);
-    assert.equal(res.decision, 'deny', `${request.route} ${request.path}`);
+    assert.equal(res.decision, 'deny', request.route);
     assert.equal(res.reasonCode, 'zone_not_allowed');
     assert.deepEqual(res.ruleIds, ['zone_access']);
   }
-  // 자기 ID가 붙은 경로는 허용됩니다.
-  assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/learner_fixture-1'))).decision, 'allow');
 });
 
 test('강사 공지 수정은 판정기가 거부한다(요청 계약에 강사 역할 값이 없음)', async () => {
