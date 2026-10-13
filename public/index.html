@@ -180,13 +180,18 @@
         $('device-error').textContent = error.message;
       }
     }
+    let requesting = false;                     // 요청이 끝나기 전의 두 번째 클릭은 보내지 않습니다(같은 기기의 중복 행 방지).
     async function requestDevice() {
+      if (requesting) return;
+      requesting = true;
+      $('device-request').disabled = true;
       $('device-error').textContent = '';
       try {
         const info = await api('/api/device', { method: 'POST' });
         showDevice(info?.state, info?.deviceId);
         if (info?.state === 'approved') await load();
       } catch (error) { $('device-error').textContent = error.message; }
+      finally { requesting = false; $('device-request').disabled = false; }
     }
 
     // 로그인 상태에 따라 화면을 바꿉니다. 로그아웃하면 화면의 자료도 지웁니다.
