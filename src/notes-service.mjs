@@ -76,6 +76,7 @@ export async function requireLogin(request, response, deps, options = {}) {
     fail(response, 401, 'LOGIN_REQUIRED');
     return null;
   }
+  request.opsActor = who.userId;   // 12단계 요청 기록이 가명(해시)만 남기는 데 씁니다. 응답·로그에는 원문을 내지 않습니다.
   if (options.requireDevice && auth.fromCookie) {
     let approved = false;
     try { approved = await (deps.deviceApproved ?? deviceApproved)(request, who.userId.toLowerCase(), deps); } catch {

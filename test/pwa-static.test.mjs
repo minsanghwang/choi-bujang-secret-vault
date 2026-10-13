@@ -40,12 +40,12 @@ test('서비스 워커는 /api와 /aleph.json을 가로채지 않고 보관하�
 });
 
 // ---- 화면 코드를 가짜 DOM으로 실제 실행해 승인 전에는 자료를 요청·표시하지 않는지 확인합니다 ----
-async function runPage({ device }) {   // device(options)는 GET·POST 요청마다 서버 응답을 흉내 냅니다.
+async function runPage({ device, ops }) {   // device(options)는 GET·POST 요청마다 서버 응답을 흉내 냅니다.
   const html = await read('index.html');
   const script = html.match(/<script type="module">([\s\S]*?)<\/script>/u)[1];
   const elements = new Map();
   const element = () => ({ hidden: false, disabled: false, textContent: '', value: '', children: [], handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, reset() {},
-    replaceChildren(...items) { this.children = items; }, appendChild() {}, set className(v) {}, setAttribute() {} });
+    replaceChildren(...items) { this.children = items; }, appendChild() {}, append(...items) { this.children.push(...items); }, insertRow() { return element(); }, insertCell() { return element(); }, set className(v) {}, setAttribute() {} });
   const document = { getElementById: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element };
   const calls = [];
   const reply = (status, data) => ({ status, json: async () => data });
@@ -53,6 +53,7 @@ async function runPage({ device }) {   // device(options)는 GET·POST 요청마
     calls.push(`${options.method ?? 'GET'} ${path}`);
     if (path === '/api/auth/session') return reply(200, { email: 'tester@example.test' });
     if (path === '/api/device') return device(options);
+    if (path === '/api/ops') return ops ? reply(200, ops) : reply(404, { error: 'NOT_FOUND' });
     if (path === '/api/notes') return reply(200, [{ id: '1', title: '가상 메모', body: '내용' }]);
     return reply(404, { error: 'NOT_FOUND' });
   };
@@ -105,6 +106,43 @@ test('승인 요청 버튼은 요청만 보내고, 요청 응답이 approved여�
 test('화면 코드에서 자료실(vault)을 여는 곳은 서버 확인 결과를 받은 checkDevice 한 곳뿐이다', async () => {
   const html = await read('index.html');
   assert.equal((html.match(/\$\('vault'\)\.hidden = false/gu) ?? []).length, 1);
-  assert.match(html, /if \(info\?\.state === 'approved'\) \{ \$\('vault'\)\.hidden = false; await load\(\); \}/u);
+  assert.match(html, /if \(info\?\.state === 'approved'\) \{ \$\('vault'\)\.hidden = false; \$\('ops'\)\.hidden = false; await load\(\); await loadOps\(\); \}/u);
+  assert.equal((html.match(/\$\('ops'\)\.hidden = false/gu) ?? []).length, 1);                      // 작전실도 같은 한 곳에서만 열림
   assert.doesNotMatch(html, /beforeinstallprompt|appinstalled|display-mode/u);                           // 설치 이벤트를 열림 조건에 쓰지 않음
+});
+
+const OPS = { schema: 'aleph.ops.v1', generatedAt: '2026-10-13T00:00:00.000Z', commit: 'abc123',
+  decider: { label: '코드에서 읽음', ruleIds: ['device_registered'], routes: [{ route: 'GET /notes/:id', allow: true }], realDecisions: { label: '미실행', note: 'x' } },
+  detection: { rule: { reasonCode: 'burst_read', windowMinutes: 10, limit: 120, source: '코드에서 읽음' }, observed: { label: '확인됨(서버 기록)', getEvents: 3, subjects: 1, busiestWindow: 3, result: { action: 'none' } }, engineDelivery: { label: '미실행' } },
+  revocation: { devices: { label: '확인됨(서버 기록)', pending: 1, approved: 1, revoked: 0, total: 2 }, proposals: { label: '확인됨(서버 기록)', count: 0 }, enforcement: { label: '미실행' } },
+  recovery: { policy: { label: '코드에서 읽음', version: 'v1', sha256Prefix: '364f5a32af39' }, backups: { label: '확인됨(서버 기록)', count: 5 }, restoreAudit: { label: '확인됨(서버 기록)', planned: 1, started: 0, restored: 1, denied: 0, failed: 0, total: 2 } },
+  requests: { label: '확인됨(서버 기록)', total: 3, allowed: 2, denied: 1, errors: 0, byRoute: [{ route: 'notes', total: 3, allowed: 2, denied: 1, errors: 0 }], records: [{ at: 't', requestId: 'abcdef12…', method: 'GET', route: 'notes', status: 200, reason: null, auth: 'cookie' }] },
+  unrun: { attacks41: { label: '미실행', note: '41종은 심판이 실행합니다.' } } };
+
+test('작전실은 승인된 기기에서만 열리고 /api/ops 응답의 값과 라벨만 그린다', async () => {
+  const page = await runPage({ device: () => ({ status: 200, json: async () => ({ state: 'approved' }) }), ops: OPS });
+  assert.equal(page.els.get('ops').hidden, false);
+  assert.deepEqual(page.calls.filter(call => call.includes('/api/ops')), ['GET /api/ops']);
+  assert.ok(page.els.get('ops-body').children.length >= 6);
+  assert.equal(page.els.get('ops-error').textContent, '');
+});
+
+for (const state of ['none', 'pending', 'revoked']) {
+  test(`승인 전(${state})에는 작전실이 숨겨지고 /api/ops를 부르지 않는다`, async () => {
+    const page = await runPage({ device: () => ({ status: 200, json: async () => ({ state }) }), ops: OPS });
+    assert.equal(page.els.get('ops').hidden, true);
+    assert.deepEqual(page.calls.filter(call => call.includes('/api/ops')), []);
+  });
+}
+
+test('작전실 응답 형식이 맞지 않으면 아무것도 그리지 않고 오류만 보인다', async () => {
+  const page = await runPage({ device: () => ({ status: 200, json: async () => ({ state: 'approved' }) }), ops: { schema: 'other' } });
+  assert.equal(page.els.get('ops-body').children.length, 0);
+  assert.match(page.els.get('ops-error').textContent, /형식이 맞지 않습니다/u);
+});
+
+test('작전실 화면 코드는 메모 본문 필드를 읽지 않고 innerHTML을 쓰지 않는다', async () => {
+  const html = await read('index.html');
+  const ops = html.slice(html.indexOf('탈환 작전실: /api/ops'), html.indexOf('// 기기 승인 상태 표시.'));
+  assert.doesNotMatch(ops, /innerHTML|insertAdjacentHTML|\.body\b|\.title\b|\.content\b/u);
 });

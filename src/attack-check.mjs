@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (![5, 6, 7, 8, 9, 10, 11].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (![5, 6, 7, 8, 9, 10, 11, 12].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -53,6 +53,9 @@ export async function runAttackChecks(config) {
   // 11단계: 로그인 없이 기기 승인 상태를 물으면 거부되어야 하고, 앱 설정(manifest)은 공개되어야 합니다. 이 두 요청만 실제로 보냅니다.
   const deviceAnonymous = config.step >= 11 ? await send(new URL('/api/device', app)) : null;
   const manifest = config.step >= 11 ? await send(new URL('/manifest.webmanifest', app)) : null;
+
+  // 12단계: 로그인 없이 작전실 요약(/api/ops)을 부르면 거부되어야 합니다. 이 요청만 실제로 보냅니다.
+  const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app)) : null;
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
   const page = await fetch(app, { redirect: 'error', signal: AbortSignal.timeout(10000) });
@@ -121,5 +124,12 @@ export async function runAttackChecks(config) {
     { attackId: 'device_approval_gate',
       expected: '승인 전 기기에는 자료가 없고, 서버가 승인한 기기에서만 기존 화면이 열림',
       observed: '미실행: 이 점검은 로그인 계정과 운영 측 승인 없이 실행되어 POST /api/device를 보내지 않음. 로컬 시험은 가짜 DB와 가짜 화면으로만 확인함' }] : []),
+    // 12단계: 작전실 요약은 로그인과 승인된 기기가 필요합니다. 41종 총공세는 심판이 실행하며 학생 점검은 보내지 않습니다.
+    ...(config.step >= 12 ? [{ attackId: 'ops_summary_without_login',
+      expected: '로그인 없이 /api/ops를 부르면 401 또는 403과 JSON 오류 문구이고 요약 수치가 나오지 않음',
+      observed: `비로그인 /api/ops ${describe(opsAnonymous, denied(opsAnonymous) && opsAnonymous.data?.schema === undefined)}` },
+    { attackId: 'full_41_attack_run',
+      expected: '41종 공격 방어는 심판이 실행하며, 학생 점검은 그 결과를 만들거나 대신 표시하지 않음',
+      observed: '미실행: 41종 총공세는 심판이 보내며, 학생 점검과 작전실은 결과를 갖고 있지 않음. 1~11단계 정상·금지 요청의 실측은 npm run ops:table(로그인 계정 환경변수 필요)로만 남김' }] : []),
   ];
 }

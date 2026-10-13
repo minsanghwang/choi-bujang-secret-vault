@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BYTE BACK | 자료실</title>
+  <title>BYTE BACK | 자료실·작전실</title>
   <meta name="theme-color" content="#101a28">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
@@ -29,12 +29,20 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; white-space: pre-wrap; }
+    .ops-block { margin: 14px 0; padding: 12px 14px; border: 1px solid #51667c; border-radius: 12px; background: #1a2a3d; }
+    .ops-block h3 { margin: 0 0 6px; font-size: 16px; }
+    .ops-block p { margin: 4px 0; font-size: 15px; line-height: 1.55; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid #8ad8df; font-size: 13px; margin-right: 6px; }
+    .tag.notrun { border-color: #e0b35c; color: #ffe2a8; }
+    .tag.unknown { border-color: #d07384; color: #ffb3c0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #34475c; word-break: break-all; }
     [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 11단계 나만의 접속 앱</div>
+    <div class="eyebrow">BYTE BACK · 12단계 탈환 작전실</div>
     <h1>자료실</h1>
     <div class="notice" id="offline" role="status" hidden>지금은 인터넷에 연결되어 있지 않습니다. 자료는 서버에만 있고 이 기기에는 저장하지 않으므로, 연결을 확인한 뒤 다시 열어 주세요.</div>
     <div class="row panel">
@@ -73,6 +81,14 @@
       </form>
       <div class="error" id="notes-error" role="alert"></div>
       <ul id="notes" aria-live="polite"></ul>
+    </section>
+
+    <section class="panel" id="ops" hidden>
+      <h2>탈환 작전실</h2>
+      <p>아래 수치는 서버가 남긴 가린 기록(요청 ID·상태·경로 이름만, 메모 제목·내용 없음)에서 읽은 값입니다. 라벨로 구분합니다: 확인됨(서버 기록) · 코드에서 읽음 · 미실행 · 확인하지 못함.</p>
+      <button type="button" id="ops-refresh">작전실 새로 읽기</button>
+      <div class="error" id="ops-error" role="alert"></div>
+      <div id="ops-body"></div>
     </section>
     <p id="logged-out-note">로그인하면 이 기기의 승인 상태를 확인합니다. 로그인하지 않은 방문자와 승인 전 기기에는 자료를 보내지 않습니다.</p>
     <p>이 화면은 브라우저 메뉴의 「앱 설치」로 설치할 수 있습니다. 자료실을 여는 조건은 서버가 확인한 승인 결과뿐이며, 설치 여부는 판단에 쓰지 않습니다.</p>
@@ -152,6 +168,74 @@
       }
     }
 
+
+    // 탈환 작전실: /api/ops 응답의 값만 textContent로 그립니다. 서버가 붙인 라벨을 그대로 보여 주고, 이 화면이 판정·통과를 만들지 않습니다.
+    function tagOf(label) {
+      const span = document.createElement('span');
+      span.className = label === '미실행' ? 'tag notrun' : label === '확인하지 못함' ? 'tag unknown' : 'tag';
+      span.textContent = label ?? '확인하지 못함';
+      return span;
+    }
+    function opsBlock(title, label, lines) {
+      const box = document.createElement('div'); box.className = 'ops-block';
+      const head = document.createElement('h3'); head.append(tagOf(label), title);
+      box.append(head);
+      for (const line of lines) { const p = document.createElement('p'); p.textContent = line; box.append(p); }
+      return box;
+    }
+    const dash = value => (value === null || value === undefined ? '—' : String(value));
+    function renderOps(d) {
+      const blocks = [];
+      blocks.push(opsBlock('판정기 규칙', d.decider?.label, [
+        `규칙 이름: ${(d.decider?.ruleIds ?? []).join(', ') || '—'}`,
+        ...(d.decider?.routes ?? []).map(r => `${r.route} → ${r.allow ? '허용 경로' : '거부 경로'}`),
+        `실제 판정 결과: ${d.decider?.realDecisions?.label ?? '—'} (${d.decider?.realDecisions?.note ?? ''})`]));
+      const o = d.detection?.observed ?? {};
+      blocks.push(opsBlock('탐지 사건', o.label, [
+        `규칙: ${d.detection?.rule?.reasonCode} (${d.detection?.rule?.windowMinutes}분 안 GET ${d.detection?.rule?.limit}건 초과) [${d.detection?.rule?.source}]`,
+        `서버가 본 GET 사건 ${dash(o.getEvents)}건, 사용자(가명) ${dash(o.subjects)}명, 10분 최대 ${dash(o.busiestWindow)}건, detect() 결과: ${dash(o.result?.action)}`,
+        `엔진의 사건 전달: ${d.detection?.engineDelivery?.label ?? '—'}`]));
+      const dv = d.revocation?.devices ?? {};
+      blocks.push(opsBlock('회수 상태', dv.label, [
+        `기기 승인 표: 대기 ${dash(dv.pending)} · 승인 ${dash(dv.approved)} · 해제 ${dash(dv.revoked)} (합계 ${dash(dv.total)})`,
+        `회수 제안(탐지 결과): ${dash(d.revocation?.proposals?.count)}건 [${d.revocation?.proposals?.label ?? '—'}]`,
+        `접속 회수 집행: ${d.revocation?.enforcement?.label ?? '—'}`]));
+      const r = d.recovery ?? {};
+      blocks.push(opsBlock('복구 버전', r.backups?.label, [
+        `정책 사본 ${dash(r.policy?.version)} 지문 ${dash(r.policy?.sha256Prefix)}… [${r.policy?.label ?? '—'}]`,
+        `메모 사본 ${dash(r.backups?.count)}건`,
+        `복원 감사: 계획 ${dash(r.restoreAudit?.planned)} · 시작 ${dash(r.restoreAudit?.started)} · 완료 ${dash(r.restoreAudit?.restored)} · 거부 ${dash(r.restoreAudit?.denied)} · 실패 ${dash(r.restoreAudit?.failed)}`]));
+      const q = d.requests ?? {};
+      const rq = opsBlock('요청 기록(최근 24시간)', q.label, [
+        `전체 ${dash(q.total)} = 허용 ${dash(q.allowed)} + 거부 ${dash(q.denied)} + 오류 ${dash(q.errors)}`,
+        ...(q.byRoute ?? []).map(x => `${x.route}: ${x.total}건 (허용 ${x.allowed}, 거부 ${x.denied}, 오류 ${x.errors})`),
+        ...(q.note ? [q.note] : [])]);
+      if (Array.isArray(q.records) && q.records.length) {
+        const table = document.createElement('table');
+        const head = table.insertRow();
+        for (const name of ['시각', '요청 ID', '메서드', '경로', '상태', '이유']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
+        for (const x of q.records) {
+          const row = table.insertRow();
+          for (const value of [x.at, x.requestId, x.method, x.route, x.status, x.reason ?? '—']) row.insertCell().textContent = String(value);
+        }
+        rq.append(table);
+      }
+      blocks.push(rq);
+      blocks.push(opsBlock('41종 공격 방어', d.unrun?.attacks41?.label, [d.unrun?.attacks41?.note ?? '']));
+      const stamp = document.createElement('p'); stamp.textContent = `읽은 시각: ${dash(d.generatedAt)} · 배포 커밋: ${dash(d.commit)}`;
+      $('ops-body').replaceChildren(...blocks, stamp);
+    }
+    // 서버가 승인된 기기로 확인한 뒤(checkDevice 안)에만 부릅니다. 승인 전에는 작전실도 열지 않습니다.
+    async function loadOps() {
+      $('ops-error').textContent = '';
+      try {
+        const data = await api('/api/ops');
+        if (data?.schema !== 'aleph.ops.v1') throw new Error('작전실 응답 형식이 맞지 않습니다.');
+        renderOps(data);
+      } catch (error) { $('ops-body').replaceChildren(); $('ops-error').textContent = error.message; }
+    }
+    $('ops-refresh').addEventListener('click', loadOps);
+
     // 기기 승인 상태 표시. 상태는 서버(/api/device)가 알려 주는 값만 쓰고, 브라우저에는 아무것도 저장하지 않습니다.
     const DEVICE_TEXT = {
       none: ['아직 승인을 요청하지 않았습니다', '승인 전에는 자료가 표시되지 않습니다. 「승인 요청」은 요청만 보내며, 열지 말지는 서버가 확인한 승인 결과로만 정해집니다.'],
@@ -172,13 +256,13 @@
     // 설치 표시, 승인 요청 버튼, 요청 응답은 이 결정에 쓰지 않습니다.
     async function checkDevice() {
       $('device-error').textContent = '';
-      $('vault').hidden = true;
+      $('vault').hidden = true; $('ops').hidden = true; $('ops-body').replaceChildren();
       try {
         const info = await api('/api/device');
         showDevice(info?.state, info?.deviceId);
-        if (info?.state === 'approved') { $('vault').hidden = false; await load(); } else $('notes').replaceChildren();
+        if (info?.state === 'approved') { $('vault').hidden = false; $('ops').hidden = false; await load(); await loadOps(); } else $('notes').replaceChildren();
       } catch (error) {
-        $('vault').hidden = true; $('notes').replaceChildren();
+        $('vault').hidden = true; $('ops').hidden = true; $('notes').replaceChildren();
         $('device-error').textContent = error.message;
       }
     }
@@ -201,9 +285,9 @@
       $('status').textContent = signedIn ? `${email} 로그인됨` : '로그인하지 않음';
       $('logout').hidden = !signedIn;
       $('login-form').hidden = signedIn;
-      $('vault').hidden = true;                 // 승인 확인 전에는 항상 숨깁니다.
+      $('vault').hidden = true; $('ops').hidden = true;   // 승인 확인 전에는 항상 숨깁니다.
       $('logged-out-note').hidden = signedIn;
-      if (!signedIn) { $('device').hidden = true; $('notes').replaceChildren(); return; }
+      if (!signedIn) { $('device').hidden = true; $('notes').replaceChildren(); $('ops-body').replaceChildren(); return; }
       await checkDevice();
     }
     $('device-request').addEventListener('click', requestDevice);

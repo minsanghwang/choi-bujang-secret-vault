@@ -122,7 +122,7 @@ test('step 6 attack check keeps the step 5 requests and leaves the device attack
     const results = await runAttackChecks(step6);
     assert.equal(results.at(-1).attackId, 'unregistered_device_request');
     assert.match(results.at(-1).observed, /^미실행/u);
-    await assert.rejects(runAttackChecks({ ...step6, step: 12 }));
+    await assert.rejects(runAttackChecks({ ...step6, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -139,7 +139,7 @@ test('step 7 attack check lists the unusual access check as not run', async () =
     const results = await runAttackChecks(step7);
     assert.deepEqual(results.slice(-2).map(item => item.attackId), ['unregistered_device_request', 'unusual_access_step_up']);
     assert.match(results.at(-1).observed, /^미실행/u);
-    await assert.rejects(runAttackChecks({ ...step7, step: 12 }));
+    await assert.rejects(runAttackChecks({ ...step7, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -156,7 +156,7 @@ test('step 8 attack check lists the cross-zone request as not run', async () => 
     const results = await runAttackChecks(step8);
     assert.equal(results.at(-1).attackId, 'cross_zone_direct_api');
     assert.match(results.at(-1).observed, /^미실행/u);
-    await assert.rejects(runAttackChecks({ ...step8, step: 12 }));
+    await assert.rejects(runAttackChecks({ ...step8, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -174,7 +174,7 @@ test('step 9 attack check lists the doppelganger revocation check as not run', a
     assert.equal(results.at(-1).attackId, 'doppelganger_burst_revocation');
     assert.match(results.at(-1).observed, /^미실행/u);
     assert.equal(results.at(-2).attackId, 'cross_zone_direct_api');
-    await assert.rejects(runAttackChecks({ ...step9, step: 12 }));
+    await assert.rejects(runAttackChecks({ ...step9, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -192,7 +192,7 @@ test('step 10 attack check lists the restore and regression checks as not run', 
     assert.deepEqual(results.slice(-2).map(item => item.attackId), ['restore_one_note_from_backup', 'post_restore_regression']);
     assert.ok(results.slice(-2).every(item => /^미실행/u.test(item.observed)));
     assert.equal(results.at(-3).attackId, 'doppelganger_burst_revocation');
-    await assert.rejects(runAttackChecks({ ...step10, step: 12 }));
+    await assert.rejects(runAttackChecks({ ...step10, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -229,7 +229,32 @@ test('step 11 attack check sends only the anonymous device and manifest requests
     assert.match(results.at(-1).observed, /^미실행/u);
     assert.ok(seen.includes('/api/device') && seen.includes('/manifest.webmanifest'));
     assert.equal(results.at(-4).attackId, 'post_restore_regression');
-    await assert.rejects(runAttackChecks({ ...step11, step: 12 }));
+    await assert.rejects(runAttackChecks({ ...step11, step: 13 }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('step 12 attack check sends only the anonymous ops request and keeps the 41-attack run as not run', async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  try {
+    globalThis.fetch = async (url) => {
+      const path = new URL(url).pathname;
+      seen.push(path);
+      if (path === '/') return new Response('<html>login</html>', { status: 200 });
+      if (path === '/manifest.webmanifest') return Response.json({ name: 'BYTE BACK 자료실' }, { status: 200 });
+      return Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 });
+    };
+    const step12 = { ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
+    const results = await runAttackChecks(step12);
+    assert.deepEqual(results.slice(-2).map(item => item.attackId), ['ops_summary_without_login', 'full_41_attack_run']);
+    assert.match(results.at(-2).observed, /^비로그인 \/api\/ops 거부됨 \(HTTP 401/u);
+    assert.match(results.at(-1).observed, /^미실행/u);
+    assert.ok(seen.includes('/api/ops'));
+    assert.ok(results.length <= 20);
+    await assert.rejects(runAttackChecks({ ...step12, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }

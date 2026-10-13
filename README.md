@@ -1,6 +1,66 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 11단계 「나만의 접속 앱을 완성합니다」
+## 현재 상태: 12단계 「탈환 작전실을 완성합니다」
+
+## 12단계 탈환 작전실 요약 (서비스·경로)
+
+| 항목 | 내용 |
+|---|---|
+| 서비스 | `notes` 자료실 화면 안의 「탈환 작전실」 패널 |
+| 경로 | `GET /api/ops`(요약), `GET /api/ops?requestId=<UUID>`(요청 기록 한 줄). 구현 `api/ops.js`, `src/ops-service.mjs`. 로그인 필요(비로그인 `401`), 브라우저 로그인은 승인된 기기 쿠키도 필요(아니면 `403`). `GET` 외 메서드는 `405` |
+| 화면 | 기기가 서버에서 `approved`로 확인된 뒤에만 열리고(`checkDevice` 한 곳), `/api/ops` 응답의 값과 서버가 붙인 라벨만 `textContent`로 그립니다. 메모 제목·내용은 읽지도 표시하지도 않습니다 |
+| 라벨 | `확인됨(서버 기록)` = 서버가 남긴 가린 요청 기록·기기 표·복원 감사·사본 표를 읽은 값 / `코드에서 읽음` = 규칙·경로 표·정책 지문을 코드에서 읽은 값(실행 결과 아님) / `미실행` = 이 서버가 볼 수 없거나 아직 실행하지 않은 것 / `확인하지 못함` = 읽으려 했지만 읽지 못함 |
+| 판정기 규칙 | `RULE_IDS`와 경로 표(`ROUTE_TABLE`)는 **코드에서 읽음**. 엔진·심판이 `decide()`를 부른 실제 판정 결과는 **미실행**(이 서버는 볼 수 없음) |
+| 탐지 사건 | 규칙(`burst_read`, 10분 120건 초과)은 코드에서 읽음. 서버 요청 기록의 GET 사건에 실제 `detect()`를 적용한 결과를 **확인됨(서버 기록)**으로 보여 줍니다(우리 서버가 본 사건만). 엔진의 사건 전달은 **미실행** |
+| 회수 상태 | 기기 승인 표의 대기·승인·해제 건수는 확인됨(서버 기록). 접속 회수 집행과 걸린 시간은 운영 엔진 몫이라 **미실행** |
+| 복구 버전 | 정책 사본 버전·지문 앞 12자(코드에서 읽음), 메모 사본 건수·복원 감사 건수(확인됨, `trace` 제외) |
+| 요청 기록 | 새 표 `defense_ops_log`(`supabase/step12-ops.sql`): 시각·요청 ID·메서드·경로 이름(`notes/:id` 형태)·상태·거부 이유 코드·인증 방식·사용자 가명(해시 12자)만. 사용자 ID 원문·이메일·토큰·쿠키·본문·메모 제목·내용·쿼리는 저장하지 않습니다. 최근 2000건만 남는 순환 기록이고, 응답을 보내기 **전에** 기록합니다. 기록이 실패해도 원래 응답은 바뀌지 않습니다 |
+| 화면 수치 = 서버 기록 | `전체 = 허용 + 거부 + 오류 = 경로별 합계 = 읽은 기록 줄 수`(`test/ops-api.test.mjs`가 같은 기록으로 검산). 화면의 요청 ID는 앞 8자만 보입니다 |
+| 41종 | 아직 실행하지 않았고 이 저장소에 41종 목록도 없습니다. 화면과 표 모두 `미실행` 한 줄이며 통과로 표시하지 않습니다 |
+| SQL | `supabase/step12-ops.sql`(① 표·권한·순환 규칙 ② 확인). **직접 실행해야 합니다.** 실행 전에는 요청 기록 묶음이 `확인하지 못함`이고 기록은 조용히 건너뜁니다(자료 API 응답은 그대로) |
+
+### 1~12단계 정상·금지 요청 한 표 (`npm run ops:table`)
+
+`scripts/ops-table.mjs` + `src/ops-checks.mjs`가 배포 주소(`publicAppUrl`)로 **실제 요청**을 보내 한 표를 만듭니다: 단계 · 정상/금지 · 기대 결과 · 실제 API 결과(HTTP 상태와 거부 이유) · 요청 ID · 확인 시각 · 서버 기록 대조. 요청마다 `X-Request-Id`(UUID)를 붙이고, 응답 뒤 `GET /api/ops?requestId=`로 서버 기록의 상태가 응답과 같은지 다시 봅니다(`일치`/`불일치`/`기록 없음`/`확인 못함`). 허용된 요청과 거부된 요청이 모두 측정 결과로 남습니다.
+
+- 계정 환경변수가 없으면 비로그인·가짜 토큰 줄만 보내고 나머지는 `미실행`과 이유를 적습니다. 값은 셸에서만 넣고 저장·출력하지 않습니다: `ALEPH_OPS_EMAIL_A`, `ALEPH_OPS_PASSWORD_A`, `ALEPH_OPS_EMAIL_B`, `ALEPH_OPS_PASSWORD_B`.
+- A는 가상 메모 한 건을 만들었다가 마지막에 지웁니다. B가 그 메모를 읽기·수정·삭제하려는 요청은 거부되어야 합니다.
+- 6·7·9단계(판정·재판정·탐지·회수)와 5단계 원본 직접 조회, 41종 총공세는 이 표가 보내지 않으므로 항상 `미실행`입니다(5단계 직접 조회는 `npm run bundle`의 `src/attack-check.mjs`가 보냅니다).
+- 결과는 `artifacts/ops-table.json`(Git에 올라가지 않음)과 화면의 표로 나옵니다. 불일치가 하나라도 있으면 종료 코드가 1입니다.
+- 이 저장소에서 실제 배포로 이 표를 실행한 기록은 **아직 없습니다**(코드 환경에서는 배포 주소에 닿을 수 없어, 시험은 가짜 서버로만 했습니다: `npm run test:ops`).
+
+### 설치·실행·중지·복구 (이 README가 들어 있는 커밋 기준)
+
+확인할 커밋은 저장소 최신 커밋(`git rev-parse HEAD`)이고, 배포된 커밋은 `/aleph.json`의 `commit`으로 대조합니다.
+
+| 단계 | 방법 |
+|---|---|
+| 설치 | `git clone <repoUrl>` → `npm ci`(Node 22 이상). Vercel에 이 저장소를 새 프로젝트로 연결 |
+| 환경변수(이름만) | Vercel: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`(서버 전용), 선택 `INSTRUCTOR_USER_IDS`. 값은 Vercel의 비밀 입력란에만 넣고 코드·Git·화면에 쓰지 않습니다 |
+| 자료 표 준비 | Supabase SQL Editor에서 `supabase/` 의 SQL을 단계 순서대로 블록 단위로 검토 후 실행: `step2` → `step3` → `step4` → `step8` → `step10-backup` → `step10-backup-trigger` → `step11-devices` → `step12-ops` |
+| 실행 | 배포 주소를 열고 로그인 → 「이 기기의 승인 상태」에서 「승인 요청」 → 운영 측이 `defense_devices`에서 승인 → 「상태 새로 확인」 → 자료실과 「탈환 작전실」이 열림 |
+| 시험(로컬, 배포 증명 아님) | `npm run test:ops && npm run test:device && npm run test:restore && npm run test:decider && npm run test:detect && npm run test:step2 && npm run test:r5 && npm run test:package` |
+| 점검 | `npm run ops:table`(위 표), `npm run bundle`(자기 점검, 제출 묶음) |
+| 중지 | 즉시 막기: Vercel에서 프로젝트를 일시중지하거나 `SUPABASE_SECRET_KEY`를 끄면 자료 API가 열리지 않습니다. 사용자 접속: Supabase에서 해당 계정 로그아웃/비활성화, 기기: `update public.defense_devices set status = 'revoked', decided_at = now() where id = '<deviceId>';` |
+| 복구 | 메모 한 건: `POST /api/restore`(미리보기 → `ownerId`+`contentSha256` 확인 후 `dryRun:false`), 정책: `npm run policy:diff` → `npm run policy:restore`. 코드: 문제 커밋만 `git revert <sha>`(`git reset --hard`는 쓰지 않음). 복구 뒤 `npm run ops:table`로 정상·금지 요청을 다시 확인 |
+
+### 누가 만든 것인가 (ALEPH SDP 엔진 사용)
+
+| 구분 | 내용 |
+|---|---|
+| ALEPH SDP 엔진 사용 | 운영 반 엔진(요청 전달·판정기 호출·탐지 사건 전달·접속 회수 집행)과 심판 접수 서버(`judgeIssuer`), 시작 틀(`scripts/bundle.mjs`, `scripts/build-public.mjs`, `scripts/deployment-identity.mjs`, `docs/`, `package/` 양식, `xdr/`). 이 저장소는 그 엔진을 포함하거나 대신하지 않고, 엔진의 동작 결과도 만들지 않습니다 |
+| 학생이 만든 것 | 자료 API(`api/*`, `src/notes-service.mjs`, `src/zones.mjs`, `src/auth-service.mjs`), 판정기 규칙(`src/decider.mjs`), 탐지 규칙(`src/detect.mjs`), 복구(`src/restore-service.mjs`, `src/policy-restore.mjs`), 접속 앱·기기 승인(`public/`, `src/device-*.mjs`), 작전실(`src/ops-*.mjs`, `public/index.html`), 자기 점검(`src/attack-check.mjs`), SQL(`supabase/`), 시험(`test/`) |
+| 엔진에 맡긴 것(미확인) | 판정기·탐지 함수가 엔진에서 실제로 불리는지, 회수 제안이 접속 차단으로 이어지는지, 걸린 시간은 이 저장소에서 확인하지 못했습니다 |
+
+### 처음부터 다시 만드는 순서
+1~2단계 가상 메모 비공개와 로그인 없는 `/data.json` 점검 → 3·4단계 로그인과 본인 메모만 읽기·쓰기(`step2~4` SQL) → 5단계 원본 직접 조회 차단(`step5` SQL은 제안, 적용 여부는 직접 확인) → 6·7단계 `src/decider.mjs` → 8단계 구역(`step8` SQL) → 9단계 `src/detect.mjs` → 10단계 사본·복구(`step10` SQL 둘) → 11단계 접속 앱·기기 승인(`step11` SQL) → 12단계 작전실(`step12` SQL) → `npm run ops:table` → `npm run bundle`.
+
+### 12단계에 남은 약점
+- 판정기·탐지·회수의 **실제 결과는 엔진·심판이 만들며** 이 서버는 볼 수 없어 작전실에 `미실행`으로 남깁니다. 탐지 칸의 `detect()` 결과는 우리 서버가 본 GET 기록에 대한 것일 뿐 엔진이 전달한 사건이 아닙니다.
+- 요청 기록은 순환 표(최근 2000건)라서 추가만 가능한 감사 로그가 아닙니다. 서버 기록 대조(`ops:table`)는 그 안에 있는 요청만 확인합니다.
+- Bearer로 직접 부르는 요청은 기기 승인을 확인하지 않습니다(11단계와 같음). 기기 쿠키는 하드웨어에 묶인 키가 아닙니다.
+- `/api/ops`는 판정기 구역 표에 없고 `allowedRoutes`에도 넣지 않았습니다(`/api/device`와 같은 취급).
+- 이 단계의 배포 확인(SQL 적용, 작전실 화면, `ops:table` 실행)은 **아직 하지 않았습니다.**
 
 ## 11단계 접속 앱·기기 승인 요약 (서비스·경로)
 
@@ -107,7 +167,7 @@
 - 새 주소 `/api/notices`(`api/notices.js`, `GET` 공지 목록, 로그인한 사용자 모두)와 `/api/notices/:id`(`api/notices/[id].js`): `GET` 읽기, `PUT` 수정(강사만)만 있고 추가·삭제는 없습니다(405). 구역 열이 없는 DB에서는 공지 목록이 빈 배열입니다. 공지는 제목·내용만 바꾸며 소유자와 구역은 바뀌지 않습니다.
 - 자료 API의 최종 확인: 검증된 사용자 ID(`src/verify-login.mjs`)와 DB에 **저장된** 행의 구역·`owner_id`, 서버 환경변수 `INSTRUCTOR_USER_IDS`(강사 사용자 UUID를 쉼표로 구분, 비어 있으면 강사 없음)만 비교합니다. 화면 메뉴와 요청 본문·헤더의 `role`·`owner_id`·`zone`은 읽지 않습니다. 개인 메모 주소로 공지를, 공지 주소로 개인 메모를 요청하면 강사여도 `403 wrong_zone`입니다.
 - 판정기 `src/decider.mjs`(`RULE_IDS`: `device_registered`, `zone_access`, `step_up_required`)에 구역 규칙 `zone_access`가 있습니다. 엔진이 확인한 `service`·`method`·`path`·`route`가 구역 표의 한 줄과 정확히 맞을 때만 통과합니다. 표는 프롬프트가 요구한 세 규칙, 즉 자기 메모 읽기(`GET /notes/:id`)·수정(`PUT /notes/:id`)과 강사 공지 수정(`PUT /notices/:id`, 허용하지 않음)뿐이며, 메모 목록·추가·삭제도 판정기 표에는 없습니다(자료 API는 그대로 처리합니다). 그 밖에 표에 없는 경로·메서드와 `route`의 불일치·쿼리가 붙은 요청(`queryLength` ≠ 0)·`:id` 자리의 `export` 같은 기능 이름·더 깊은 경로는 `deny`와 `zone_not_allowed`입니다. 자료는 쿼리가 아니라 경로의 ID 한 칸으로만 고르고, 그 ID는 UUID이거나 7단계 엔진 예시의 `demo`(자기 메모의 정상 요청)일 때만 인정하고, 그 밖의 이름(`other-1`, `learner_…`, `notice…` 등)은 모두 `deny`·`zone_not_allowed`입니다. 요청 계약에 소유자 값이 없어서, 판정기는 허용한 메모 경로를 처음 쓴 사용자(`subjectId`)를 소유 기록(프로세스 메모리, 최대 5000건)에 남기고 같은 경로를 다른 사용자가 요청하면 `deny`·`zone_not_allowed`로 거부합니다. 먼저 접근한 쪽이 주인이 되는 방식이고 서버가 다시 뜨면 기록이 사라지므로 최종 소유자 확인은 자료 API가 합니다. 공지 읽기·수정(`GET·PUT /notices/:id`)은 요청 계약에 강사 역할 값이 없어 판정기가 허용하지 않습니다(공지 읽기는 자료 API가 로그인한 사용자에게 허용하지만 판정기 표에는 없습니다). 6단계 기기 규칙과 7단계 추가 확인 규칙은 그대로이고 순서는 기기 → 구역 → 추가 확인입니다.
-- `aleph.config.json`: `step` 11, `restoreRoute` `POST /api/restore`. `allowedRoutes`는 구현한 메서드와 경로를 `GET /api/notes`처럼 한 줄씩 적습니다(`GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`, `GET /api/notices`, `GET·PUT /api/notices/:id`). 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)과 9단계 탐지·회수(`doppelganger_burst_revocation`)를 미실행으로 기록합니다.
+- `aleph.config.json`: `step` 12, `restoreRoute` `POST /api/restore`. `allowedRoutes`는 구현한 메서드와 경로를 `GET /api/notes`처럼 한 줄씩 적습니다(`GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`, `GET /api/notices`, `GET·PUT /api/notices/:id`). 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)과 9단계 탐지·회수(`doppelganger_burst_revocation`)를 미실행으로 기록합니다.
 
 **다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
 

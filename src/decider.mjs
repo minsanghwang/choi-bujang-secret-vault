@@ -94,3 +94,6 @@ export async function decide(request) {
   rememberOwner(request);   // 허용한 메모 경로의 첫 사용자를 기록합니다.
   return { ...answer('allow', 'approved', 'device_registered') };
 }
+
+// 12단계 작전실이 규칙 이름과 구역 표를 읽기만 하는 요약입니다. 판정에는 쓰이지 않습니다.
+export const ROUTE_TABLE = Object.freeze(Object.entries(ZONE_ROUTES).map(([route, entry]) => Object.freeze({ route, allow: entry.allow })));
