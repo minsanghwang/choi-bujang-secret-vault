@@ -78,7 +78,9 @@ test('step 5 attack check adds the direct anon request and leaves the login chec
       return Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 });
     };
     const results = await runAttackChecks(step3);
-    assert.deepEqual(requested, [['/data.json', 'no-token'], ['/api/notes', 'no-token'], ['/api/notes', 'with-token'], ['/', 'no-token'], ['/rest/v1/notes', 'apikey-only']]);
+    const once = requested.filter((item, i) => i % 2 === 0);                                            // 점검마다 같은 요청을 형식만 바꿔 두 번 보냄
+    assert.deepEqual(requested, once.flatMap(item => [item, item]));
+    assert.deepEqual(once, [['/data.json', 'no-token'], ['/api/notes', 'no-token'], ['/api/notes', 'with-token'], ['/', 'no-token'], ['/rest/v1/notes', 'apikey-only']]);
     assert.match(results[0].observed, /보이지 않음/u);
     assert.match(results[1].observed, /^비로그인 \/api\/notes 거부됨 \(HTTP 401, JSON, 메모 0건\)/u);
     assert.match(results[2].observed, /거부됨 \(HTTP 401/u);
@@ -303,15 +305,19 @@ test('step 12 attack check tags every request it really sends with its attackId 
     const step12 = { ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
       originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
     const results = await runAttackChecks(step12);
-    const sentIds = sent.map(item => item.headers['x-attack-id']).filter(Boolean).sort();
+    const sentIds = [...new Set(sent.map(item => item.headers['x-attack-id']).filter(Boolean))].sort();
     assert.deepEqual(sentIds, ['anonymous_api_notes_read', 'device_status_without_login', 'direct_original_api_anon_read', 'forged_token_notes_read',
       'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'static_data_json_read']);
     assert.equal(sent.filter(item => item.headers['x-attack-id']).length, sent.length);                  // 보낸 요청은 모두 태그가 있음
-    for (const item of sent) assert.equal(item.evidence, item.headers['x-attack-id']);                  // fetch의 alephEvidence = 그 요청의 attackId
-    assert.equal(sent.length, 8);                                                                       // 임시 관찰 요청은 없음
+    for (const item of sent) {                                                                          // 점검마다 문자열·객체 두 형식으로 한 번씩
+      const id = item.headers['x-attack-id'];
+      if (typeof item.evidence === 'string') assert.equal(item.evidence, id);
+      else assert.deepEqual(item.evidence, { attackId: id, requestId: item.headers['x-request-id'] });
+    }
+    assert.equal(sent.length, 16);
     for (const item of sent) assert.match(item.headers['x-request-id'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
     for (const result of results) {
-      const request = sent.find(item => item.headers['x-attack-id'] === result.attackId);
+      const request = sent.findLast(item => item.headers['x-attack-id'] === result.attackId);
       if (request) assert.ok(result.observed.endsWith(`[요청 ID ${request.headers['x-request-id']}]`), result.attackId);   // 결과의 요청 ID = 실제로 보낸 요청의 ID
       else assert.match(result.observed, /^미실행/u, result.attackId);                                       // 보내지 않은 점검은 미실행
       assert.ok(result.observed.length <= 300 && result.expected.length <= 300);
