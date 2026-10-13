@@ -287,6 +287,36 @@ test('attack check does not need Node-only globals such as Buffer and base64url 
   }
 });
 
+test('attack check also runs where URL has no searchParams or origin (isolated judge environment)', async () => {
+  const OriginalURL = globalThis.URL;
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  class MinimalURL extends OriginalURL {            // 격리 환경의 단순한 URL: searchParams·origin이 없음
+    get searchParams() { return undefined; }
+    get origin() { return undefined; }
+  }
+  try {
+    globalThis.URL = MinimalURL;
+    globalThis.fetch = async (url, options = {}) => {
+      seen.push([String(url), options.alephEvidence]);
+      const path = new OriginalURL(String(url)).pathname;
+      const plain = (status, type, data) => ({ status, headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
+        json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) });
+      if (path === '/') return plain(200, 'text/html', '<html>login</html>');
+      if (path === '/manifest.webmanifest') return plain(200, 'application/json', { name: 'BYTE BACK 자료실' });
+      return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
+    };
+    const results = await runAttackChecks({ ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } });
+    assert.ok(results.length >= 15);
+    assert.equal(seen.length, 8);
+    assert.ok(seen.every(([url, evidence]) => (url.includes('p.supabase.co') ? !url.includes('attackId') : url.endsWith(`attackId=${evidence}`))));
+  } finally {
+    globalThis.URL = OriginalURL;
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('step 12 attack check tags every request it really sends with its attackId and request id, and leaves unsent checks untagged', async () => {
   const originalFetch = globalThis.fetch;
   const sent = [];

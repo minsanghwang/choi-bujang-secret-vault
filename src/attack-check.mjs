@@ -21,15 +21,15 @@ const sentIds = {};
 // 헤더 이름은 소문자로 붙입니다(HTTP 헤더는 대소문자를 가리지 않지만, 기록 도구가 객체의 키를 그대로 읽는 경우를 위해).
 const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
 
-// 같은 출처(우리 앱) 요청의 주소에는 ?attackId=<점검 이름>을 붙입니다. 원본 저장소(Supabase) 주소에는 붙이지 않습니다(알 수 없는 조회 조건이 되므로).
-const tagUrl = (url, attackId) => {
-  const target = new URL(url);
-  if (attackId && ownOrigin && target.origin === ownOrigin) target.searchParams.set('attackId', attackId);
-  return target;
+// 우리 앱 요청의 주소에는 ?attackId=<점검 이름>을 붙입니다. 원본 저장소(Supabase) 주소에는 붙이지 않습니다(알 수 없는 조회 조건이 되므로).
+// 격리 환경의 URL에는 searchParams가 없을 수 있어서 주소를 문자열로만 만듭니다(같은 주소가 이미 ?를 가지면 &로 잇습니다).
+const tagUrl = (url, attackId, own) => {
+  const text = String(url);
+  if (!attackId || !own) return text;
+  return `${text}${text.includes('?') ? '&' : '?'}attackId=${attackId}`;      // attackId는 영문·숫자·_·-·.만 씁니다
 };
-let ownOrigin = null;
-async function send(url, authorization, extraHeaders = {}, attackId = null, keepRaw = false) {
-  const response = await fetch(tagUrl(url, attackId), { redirect: 'error', signal: timeout(10000), ...(attackId ? { alephEvidence: attackId } : {}),
+async function send(url, authorization, extraHeaders = {}, attackId = null, keepRaw = false, own = true) {
+  const response = await fetch(tagUrl(url, attackId, own), { redirect: 'error', signal: timeout(10000), ...(attackId ? { alephEvidence: attackId } : {}),
     headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...(attackId ? tagged(attackId) : {}) } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
@@ -69,7 +69,6 @@ export async function runAttackChecks(config) {
   if (![5, 6, 7, 8, 9, 10, 11, 12].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   for (const key of Object.keys(sentIds)) delete sentIds[key];
   const app = appUrl(config);
-  ownOrigin = app.origin;
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
 
@@ -94,7 +93,7 @@ export async function runAttackChecks(config) {
   const publicKey = config.database?.publishableKey;
   if (typeof config.originalApiUrl === 'string' && config.originalApiUrl.startsWith('https://')
       && typeof publicKey === 'string' && publicKey) {
-    direct = await send(config.originalApiUrl, null, { apikey: publicKey }, 'direct_original_api_anon_read');
+    direct = await send(config.originalApiUrl, null, { apikey: publicKey }, 'direct_original_api_anon_read', false, false);
   }
   const directObserved = direct === null
     ? '미실행(not_run): originalApiUrl 또는 공개 키가 설정에 없어 직접 요청을 보내지 않음'
