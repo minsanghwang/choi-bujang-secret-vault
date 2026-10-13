@@ -116,7 +116,7 @@ export async function runAttackChecks(config) {
       expected: '로그인 없이 /api/device를 부르면 401 또는 403과 JSON 오류 문구이고 승인 상태가 나오지 않음',
       observed: `비로그인 /api/device ${describe(deviceAnonymous, denied(deviceAnonymous) && deviceAnonymous.data?.state === undefined)}` },
     { attackId: 'manifest_public',
-      expected: '/manifest.webmanifest가 공개되고 앱 이름이 있음(설치 표시만으로 기기가 확인된 것은 아님)',
+      expected: '/manifest.webmanifest가 공개되고 앱 이름이 있음(자료실을 여는 조건은 서버가 확인한 승인 결과뿐)',
       observed: `${manifest.status === 200 && manifest.json && typeof manifest.data?.name === 'string' ? '앱 설정이 공개됨' : '앱 설정을 확인하지 못함'} (HTTP ${manifest.status}, ${manifest.json ? 'JSON' : 'JSON 아님'})` },
     { attackId: 'device_approval_gate',
       expected: '승인 전 기기에는 자료가 없고, 서버가 승인한 기기에서만 기존 화면이 열림',

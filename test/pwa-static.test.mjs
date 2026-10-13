@@ -10,7 +10,7 @@ test('manifest에는 앱 이름·시작 주소·표시 방식·아이콘이 있�
   assert.equal(manifest.name, 'BYTE BACK 자료실');
   assert.ok(manifest.short_name && manifest.lang === 'ko');
   assert.deepEqual([manifest.start_url, manifest.scope, manifest.display], ['/', '/', 'standalone']);
-  assert.match(manifest.description, /설치했다는 것만으로 기기가 승인되지는 않으며/u);
+  assert.match(manifest.description, /기기 승인 여부는 서버가 정하며, 설치 여부는 판단에 쓰지 않습니다/u);
   const sizes = manifest.icons.map(icon => icon.sizes);
   assert.ok(sizes.includes('192x192') && sizes.includes('512x512'));
   for (const icon of manifest.icons) {
@@ -26,7 +26,7 @@ test('공개 파일 어디에도 브라우저 저장소·쿠키 읽기가 없고
   }
   const html = await read('index.html');
   assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest">/u);
-  assert.match(html, /설치했다는 표시만으로 기기가 믿을 수 있게 되는 것은 아니며/u);
+  assert.match(html, /자료실을 여는 조건은 서버가 확인한 승인 결과뿐이며, 설치 여부는 판단에 쓰지 않습니다/u);
 });
 
 test('서비스 워커는 /api와 /aleph.json을 가로채지 않고 보관하지 않으며, 정적 파일만 보관한다', async () => {
@@ -40,11 +40,11 @@ test('서비스 워커는 /api와 /aleph.json을 가로채지 않고 보관하�
 });
 
 // ---- 화면 코드를 가짜 DOM으로 실제 실행해 승인 전에는 자료를 요청·표시하지 않는지 확인합니다 ----
-async function runPage({ device }) {
+async function runPage({ device }) {   // device(options)는 GET·POST 요청마다 서버 응답을 흉내 냅니다.
   const html = await read('index.html');
   const script = html.match(/<script type="module">([\s\S]*?)<\/script>/u)[1];
   const elements = new Map();
-  const element = () => ({ hidden: false, textContent: '', value: '', children: [], addEventListener() {}, reset() {},
+  const element = () => ({ hidden: false, disabled: false, textContent: '', value: '', children: [], handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, reset() {},
     replaceChildren(...items) { this.children = items; }, appendChild() {}, set className(v) {}, setAttribute() {} });
   const document = { getElementById: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element };
   const calls = [];
@@ -52,7 +52,7 @@ async function runPage({ device }) {
   const fetchStub = async (path, options = {}) => {
     calls.push(`${options.method ?? 'GET'} ${path}`);
     if (path === '/api/auth/session') return reply(200, { email: 'tester@example.test' });
-    if (path === '/api/device') return device();
+    if (path === '/api/device') return device(options);
     if (path === '/api/notes') return reply(200, [{ id: '1', title: '가상 메모', body: '내용' }]);
     return reply(404, { error: 'NOT_FOUND' });
   };
@@ -86,4 +86,25 @@ test('승인 상태를 확인하지 못하거나 모르는 값이면 자료를 �
     assert.equal(page.els.get('vault').hidden, true);
     assert.deepEqual(page.calls.filter(call => call.includes('/api/notes')), []);
   }
+});
+
+test('승인 요청 버튼은 요청만 보내고, 요청 응답이 approved여도 서버에 다시 물어본 결과가 아니면 자료실을 열지 않는다', async () => {
+  const answers = { post: { status: 201, json: async () => ({ state: 'approved', deviceId: 'x' }) },   // 요청 응답이 approved라고 해도
+    get: { status: 200, json: async () => ({ state: 'pending', deviceId: 'x' }) } };                      // 서버가 이번에 알려 주는 상태는 pending
+  const page = await runPage({ device: options => (options?.method === 'POST' ? answers.post : answers.get) });
+  await page.els.get('device-request').handlers.click();
+  assert.equal(page.els.get('vault').hidden, true);
+  assert.deepEqual(page.calls.filter(call => call.includes('/api/notes')), []);
+  assert.deepEqual(page.calls.filter(call => call.includes('/api/device')), ['GET /api/device', 'POST /api/device', 'GET /api/device']);
+  answers.get = { status: 200, json: async () => ({ state: 'approved' }) };                              // 서버가 승인했다고 답하면 그때만 열림
+  await page.els.get('device-refresh').handlers.click();
+  assert.equal(page.els.get('vault').hidden, false);
+  assert.deepEqual(page.calls.filter(call => call.includes('/api/notes')), ['GET /api/notes']);
+});
+
+test('화면 코드에서 자료실(vault)을 여는 곳은 서버 확인 결과를 받은 checkDevice 한 곳뿐이다', async () => {
+  const html = await read('index.html');
+  assert.equal((html.match(/\$\('vault'\)\.hidden = false/gu) ?? []).length, 1);
+  assert.match(html, /if \(info\?\.state === 'approved'\) \{ \$\('vault'\)\.hidden = false; await load\(\); \}/u);
+  assert.doesNotMatch(html, /beforeinstallprompt|appinstalled|display-mode/u);                           // 설치 이벤트를 열림 조건에 쓰지 않음
 });

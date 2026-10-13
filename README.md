@@ -13,7 +13,7 @@
 | 상태 | `none`(요청 전) → `pending`(대기) → `approved`(승인) / `revoked`(해제). 승인·해제는 **운영 측이 DB(`defense_devices`)에서만** 바꿉니다. 화면 버튼·요청 본문·쿼리·헤더로는 승인되지 않고, 본문에 `status` 같은 값을 보내면 `400`입니다 |
 | 브라우저에 두는 것 | 서버가 준 읽을 수 없는(`HttpOnly`·`Secure`·`SameSite=Strict`) 쿠키 `__Host-aleph-dv` 하나(서버가 만든 무작위 핸들). DB에는 그 SHA-256 지문만 저장하고 핸들 원문은 응답·로그·DB 어디에도 없습니다. 기기 키·토큰·승인 상태를 `localStorage` 등에 넣지 않습니다 |
 | 승인 전 화면 | 로그인해도 승인 전(`none`·`pending`·`revoked`·확인 실패)에는 자료 영역을 숨기고 `/api/notes`를 부르지 않습니다. 서버가 `approved`라고 답한 뒤에만 기존 자료실을 엽니다 |
-| 설치 표시 | 앱 설치·서비스 워커 등록은 기기 확인이 아닙니다. 화면과 manifest에 그렇게 적었습니다 |
+| 자료실을 여는 조건 | **서버가 확인한 승인 결과뿐입니다.** 화면에서 자료실을 여는 곳은 `checkDevice` 한 곳이고, `GET /api/device`가 이번에 `approved`라고 답했을 때만 엽니다. 「승인 요청」 버튼은 `POST /api/device`로 요청만 보내고, 그 응답이 무엇이든 열지 않고 `GET`으로 서버에 다시 물어봅니다. 앱 설치 여부·서비스 워커·`beforeinstallprompt` 같은 설치 이벤트는 열림 조건에 쓰지 않습니다 |
 | 서비스 워커 | 인터넷이 끊겼을 때 오프라인 안내만 보여 줍니다. `/api/*`와 `/aleph.json`은 가로채지도 보관하지도 않습니다 |
 | SQL | `supabase/step11-devices.sql`(① 표 만들기 ② 확인, 승인·해제 문장은 주석). **실행함**: 표 `defense_devices` 생성, RLS 켜짐, `anon`·`authenticated` 권한 모두 `false`, 0행임을 DB에서 읽어 확인했습니다 |
 | 운영 측 승인 방법 | SQL Editor에서 `select id, owner_id, status, requested_at from public.defense_devices order by requested_at desc;`로 확인한 뒤 `update public.defense_devices set status = 'approved', decided_at = now() where id = '<deviceId>';` |
