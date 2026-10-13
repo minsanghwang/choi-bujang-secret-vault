@@ -286,3 +286,37 @@ test('attack check does not need Node-only globals such as Buffer and base64url 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('step 12 attack check tags every request it really sends with its attackId and request id, and leaves unsent checks untagged', async () => {
+  const originalFetch = globalThis.fetch;
+  const sent = [];
+  try {
+    globalThis.fetch = async (url, options = {}) => {
+      const path = new URL(url).pathname;
+      sent.push({ path, headers: options.headers ?? {} });
+      const plain = (status, type, data) => ({ status, headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
+        json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) });
+      if (path === '/') return plain(200, 'text/html', '<html>login</html>');
+      if (path === '/manifest.webmanifest') return plain(200, 'application/json', { name: 'BYTE BACK 자료실' });
+      return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
+    };
+    const step12 = { ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
+    const results = await runAttackChecks(step12);
+    const sentIds = sent.map(item => item.headers['X-Attack-Id']).filter(Boolean).sort();
+    assert.deepEqual(sentIds, ['anonymous_api_notes_read', 'device_status_without_login', 'direct_original_api_anon_read', 'forged_token_notes_read',
+      'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'static_data_json_read']);
+    assert.equal(sent.filter(item => item.headers['X-Attack-Id']).length, sent.length);                  // 보낸 요청은 모두 태그가 있음
+    for (const item of sent) assert.match(item.headers['X-Request-Id'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+    for (const result of results) {
+      const request = sent.find(item => item.headers['X-Attack-Id'] === result.attackId);
+      if (request) assert.ok(result.observed.endsWith(`[요청 ID ${request.headers['X-Request-Id']}]`), result.attackId);   // 결과의 요청 ID = 실제로 보낸 요청의 ID
+      else assert.match(result.observed, /^미실행/u, result.attackId);                                       // 보내지 않은 점검은 미실행
+      assert.ok(result.observed.length <= 300 && result.expected.length <= 300);
+    }
+    const again = await runAttackChecks(step12);                                                          // 두 번째 실행도 이전 요청 ID를 끌고 오지 않음
+    assert.notEqual(again[1].observed, results[1].observed);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

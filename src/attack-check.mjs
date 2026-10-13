@@ -14,9 +14,15 @@ function appUrl(config) {
   return app;
 }
 
-async function send(url, authorization, extraHeaders = {}) {
+// 이 점검이 실제로 보낸 요청에는 점검 이름(X-Attack-Id)과 요청 ID(X-Request-Id)를 붙입니다.
+// 서버 기록(요청 ID)과 이 결과를 같은 요청으로 대조할 수 있고, 요청을 보내지 않은 점검에는 붙일 것이 없어 미실행으로 남습니다.
+const uuid4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/gu, c => { const r = Math.floor(Math.random() * 16); return (c === 'x' ? r : (r & 3) | 8).toString(16); });
+const sentIds = {};
+const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'X-Attack-Id': attackId, 'X-Request-Id': requestId }; };
+
+async function send(url, authorization, extraHeaders = {}, attackId = null) {
   const response = await fetch(url, { redirect: 'error', signal: timeout(10000),
-    headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders } });
+    headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...(attackId ? tagged(attackId) : {}) } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
   if (/json/iu.test(contentType)) {
@@ -53,28 +59,29 @@ function forgedToken(identityProvider) {
 
 export async function runAttackChecks(config) {
   if (![5, 6, 7, 8, 9, 10, 11, 12].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  for (const key of Object.keys(sentIds)) delete sentIds[key];
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
 
-  const staticData = await send(new URL('/data.json', app));
+  const staticData = await send(new URL('/data.json', app), null, {}, 'static_data_json_read');
   const staticLeak = staticData.data !== null
     && (staticData.data.sampleMarker === config.sampleMarker || noteCount(staticData.data) > 0);
-  const anonymous = await send(new URL('/api/notes', app));
-  const forged = await send(new URL('/api/notes', app), forgedToken(config.identityProvider));
+  const anonymous = await send(new URL('/api/notes', app), null, {}, 'anonymous_api_notes_read');
+  const forged = await send(new URL('/api/notes', app), forgedToken(config.identityProvider), {}, 'forged_token_notes_read');
   const denied = result => [401, 403].includes(result.status) && result.json && noteCount(result.data) === 0
     && typeof result.data?.error === 'string';
   const describe = (result, ok) => `${ok ? '거부됨' : '거부되지 않음'} (HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}, 메모 ${noteCount(result.data)}건)`;
 
   // 11단계: 로그인 없이 기기 승인 상태를 물으면 거부되어야 하고, 앱 설정(manifest)은 공개되어야 합니다. 이 두 요청만 실제로 보냅니다.
-  const deviceAnonymous = config.step >= 11 ? await send(new URL('/api/device', app)) : null;
-  const manifest = config.step >= 11 ? await send(new URL('/manifest.webmanifest', app)) : null;
+  const deviceAnonymous = config.step >= 11 ? await send(new URL('/api/device', app), null, {}, 'device_status_without_login') : null;
+  const manifest = config.step >= 11 ? await send(new URL('/manifest.webmanifest', app), null, {}, 'manifest_public') : null;
 
   // 12단계: 로그인 없이 작전실 요약(/api/ops)을 부르면 거부되어야 합니다. 이 요청만 실제로 보냅니다.
-  const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app)) : null;
+  const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  const page = await fetch(app, { redirect: 'error', signal: timeout(10000) });
+  const page = await fetch(app, { redirect: 'error', signal: timeout(10000), headers: tagged('public_key_in_screen_code') });
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
 
@@ -83,13 +90,13 @@ export async function runAttackChecks(config) {
   const publicKey = config.database?.publishableKey;
   if (typeof config.originalApiUrl === 'string' && config.originalApiUrl.startsWith('https://')
       && typeof publicKey === 'string' && publicKey) {
-    direct = await send(config.originalApiUrl, null, { apikey: publicKey });
+    direct = await send(config.originalApiUrl, null, { apikey: publicKey }, 'direct_original_api_anon_read');
   }
   const directObserved = direct === null
     ? '미실행: originalApiUrl 또는 공개 키가 설정에 없어 직접 요청을 보내지 않음'
     : `${noteCount(direct.data) === 0 ? '메모가 보이지 않음' : '메모가 보임'} (HTTP ${direct.status}, 메모 ${noteCount(direct.data)}건)`;
 
-  return [
+  const results = [
     { attackId: 'static_data_json_read', expected: '비로그인으로 /data.json을 열어도 메모가 없어야 함',
       observed: staticLeak ? `비로그인 /data.json에서 메모가 보임 (HTTP ${staticData.status})`
         : `비로그인 /data.json에서 메모가 보이지 않음 (HTTP ${staticData.status})` },
@@ -148,4 +155,6 @@ export async function runAttackChecks(config) {
       expected: '41종 공격 방어는 심판이 실행하며, 학생 점검은 그 결과를 만들거나 대신 표시하지 않음',
       observed: '미실행: 41종 총공세는 심판이 보내며, 학생 점검과 작전실은 결과를 갖고 있지 않음. 1~11단계 정상·금지 요청의 실측은 npm run ops:table(로그인 계정 환경변수 필요)로만 남김' }] : []),
   ];
+  // 실제로 보낸 점검에만 그 요청 ID를 덧붙입니다(미실행 점검에는 붙지 않음).
+  return results.map(item => (sentIds[item.attackId] ? { ...item, observed: `${item.observed} [요청 ID ${sentIds[item.attackId]}]` } : item));
 }
