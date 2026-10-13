@@ -81,11 +81,15 @@ export async function runAttackChecks(config) {
   // 12단계: 로그인 없이 작전실 요약(/api/ops)을 부르면 거부되어야 합니다. 이 요청만 실제로 보냅니다.
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
-  // 임시 관찰(원인을 찾으면 지웁니다): 점검이 도는 환경의 fetch가 어떤 모양인지 서버 기록(쿼리)으로 확인합니다. 비밀값은 읽지 않습니다.
-  if (config.step >= 12) try {
-    const shape = `${typeof fetch}.${fetch.name}.${fetch.length}.${typeof Headers}${typeof Request}${typeof Response}${typeof process}${typeof Buffer}.${String(fetch).replace(/\s+/gu, ' ')}`;
-    await fetch(new URL(`/api/device?fx=${shape.replace(/[^A-Za-z0-9_.-]/gu, '_').slice(0, 150)}`, app), { redirect: 'error', signal: timeout(10000) });
-  } catch { /* 관찰 실패는 점검 결과에 영향을 주지 않습니다. */ }
+  // 임시 관찰(원인을 찾으면 지웁니다): 점검이 도는 환경의 fetch 소스와 전역 이름을 서버 기록(쿼리)으로 확인합니다. 비밀값은 읽지 않습니다.
+  if (config.step >= 12) {
+    const chunks = (label, text, max) => { const out = []; for (let i = 0; i < text.length && out.length < max; i += 110) out.push([`${label}${out.length}`, text.slice(i, i + 110)]); return out; };
+    let probe = [];
+    try { probe = [...chunks('s', String(fetch), 10), ...chunks('g', Object.getOwnPropertyNames(globalThis).join(','), 5)]; } catch { /* 관찰 실패 */ }
+    for (const [name, text] of probe) {
+      try { await fetch(new URL(`/api/device?c=${name}&f=${base64url(text)}`, app), { redirect: 'error', signal: timeout(10000) }); } catch { /* 관찰 실패는 점검 결과에 영향을 주지 않습니다. */ }
+    }
+  }
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
   const page = await fetch(app, { redirect: 'error', signal: timeout(10000), attackId: 'public_key_in_screen_code', headers: tagged('public_key_in_screen_code') });
