@@ -14,23 +14,16 @@ function appUrl(config) {
   return app;
 }
 
-// 이 점검이 실제로 보낸 요청에는 fetch의 alephEvidence(점검 이름)와 헤더 X-Attack-Id·X-Request-Id를 붙입니다.
+// 이 점검이 실제로 보낸 요청에는 점검 이름(X-Attack-Id)과 요청 ID(X-Request-Id)를 붙입니다.
 // 서버 기록(요청 ID)과 이 결과를 같은 요청으로 대조할 수 있고, 요청을 보내지 않은 점검에는 붙일 것이 없어 미실행으로 남습니다.
 const uuid4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/gu, c => { const r = Math.floor(Math.random() * 16); return (c === 'x' ? r : (r & 3) | 8).toString(16); });
 const sentIds = {};
 // 헤더 이름은 소문자로 붙입니다(HTTP 헤더는 대소문자를 가리지 않지만, 기록 도구가 객체의 키를 그대로 읽는 경우를 위해).
 const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
 
-// alephEvidence의 형식이 문서에 없습니다. 문자열과 {attackId, requestId}는 이미 시험했으므로, 이번에는 키가 하나뿐인 객체 두 가지를 보냅니다.
-// 격리 환경은 요청을 24번까지만 허용하므로 점검마다 읽기 전용(GET) 요청을 두 번(총 16번)만 보내고, 결과에는 마지막 요청의 ID를 적습니다.
-const evidenceVariants = attackId => [{ attack_id: attackId }, { attackId }];
 async function send(url, authorization, extraHeaders = {}, attackId = null) {
-  let response;
-  for (const evidence of attackId ? evidenceVariants(attackId) : [null]) {
-    const tags = attackId ? tagged(attackId) : {};
-    response = await fetch(url, { redirect: 'error', signal: timeout(10000), ...(evidence ? { alephEvidence: evidence } : {}),
-      headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...tags } });
-  }
+  const response = await fetch(url, { redirect: 'error', signal: timeout(10000),
+    headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...(attackId ? tagged(attackId) : {}) } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
   if (/json/iu.test(contentType)) {
@@ -89,22 +82,7 @@ export async function runAttackChecks(config) {
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  let page;
-  for (const evidence of evidenceVariants('public_key_in_screen_code')) {
-    page = await fetch(app, { redirect: 'error', signal: timeout(10000), alephEvidence: evidence, headers: tagged('public_key_in_screen_code') });
-  }
-  // 임시 관찰(원인을 찾으면 지웁니다): 점검 환경의 전역 이름 끝부분과 환경변수 "이름"(값은 읽지 않음)을 서버 기록의 쿼리로 확인합니다.
-  if (config.step >= 12) {
-    const tail = (label, text, count) => { const out = []; for (let i = 0; i < count; i += 1) { const end = text.length - i * 110; if (end > 0) out.push([`${label}${i}`, text.slice(Math.max(0, end - 110), end)]); } return out; };
-    let probe = [];
-    try {
-      probe = [...tail('t', Object.getOwnPropertyNames(globalThis).join(','), 3),
-        ...tail('e', typeof process !== 'undefined' && process.env ? Object.keys(process.env).join(',') : 'noenv', 3)];
-    } catch { /* 관찰 실패 */ }
-    for (const [name, text] of probe) {
-      try { await fetch(new URL(`/api/device?c=${name}&f=${base64url(text)}`, app), { redirect: 'error', signal: timeout(10000) }); } catch { /* 관찰 실패는 점검 결과에 영향을 주지 않습니다. */ }
-    }
-  }
+  const page = await fetch(app, { redirect: 'error', signal: timeout(10000), headers: tagged('public_key_in_screen_code') });
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
 
