@@ -30,7 +30,7 @@
 </head>
 <body>
   <main>
-    <div class="eyebrow" id="eyebrow">BYTE BACK</div>
+    <div class="eyebrow">BYTE BACK · 8단계 구역 나누기</div>
     <h1>자료실</h1>
     <div class="row panel">
       <span class="status" id="status" aria-live="polite">로그인하지 않음</span>
@@ -83,13 +83,7 @@
     async function api(path, options = {}) {
       let result = await call(path, options);
       if (result.status === 401) {          // 접근 토큰이 만료됐을 수 있으니 서버에 한 번 갱신을 부탁합니다.
-        // 머리말의 단계는 배포가 만든 /aleph.json의 step을 그대로 따릅니다. 읽지 못하면 단계 없이 둡니다.
-    try {
-      const info = await (await fetch('/aleph.json', { cache: 'no-store' })).json();
-      if (Number.isInteger(info.step)) $('eyebrow').textContent = `BYTE BACK · ${info.step}단계`;
-    } catch { /* 머리말만 단계 없이 보임 */ }
-
-    const session = await call('/api/auth/session');
+        const session = await call('/api/auth/session');
         if (session.status === 200) result = await call(path, options);
       }
       if (result.status === 401) { await render(null); throw new Error('로그인이 필요합니다.'); }
