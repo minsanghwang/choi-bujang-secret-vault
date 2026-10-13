@@ -122,7 +122,24 @@ test('step 6 attack check keeps the step 5 requests and leaves the device attack
     const results = await runAttackChecks(step6);
     assert.equal(results.at(-1).attackId, 'unregistered_device_request');
     assert.match(results.at(-1).observed, /^미실행/u);
-    await assert.rejects(runAttackChecks({ ...step6, step: 7 }));
+    await assert.rejects(runAttackChecks({ ...step6, step: 8 }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('step 7 attack check lists the unusual access check as not run', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => (new URL(url).pathname === '/'
+      ? new Response('<html>login</html>', { status: 200 })
+      : Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 }));
+    const step7 = { ...config, step: 7, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
+    const results = await runAttackChecks(step7);
+    assert.deepEqual(results.slice(-2).map(item => item.attackId), ['unregistered_device_request', 'unusual_access_step_up']);
+    assert.match(results.at(-1).observed, /^미실행/u);
+    await assert.rejects(runAttackChecks({ ...step7, step: 8 }));
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1,27 +1,25 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 6단계 「등록한 기기만 자료실에 들어옵니다」
+## 현재 상태: 7단계 「평소와 다른 접속은 다시 확인합니다」
 
 **작동하는 기능**
 
-- 판정기 `src/decider.mjs`의 `decide(request)`에 규칙 `device_registered` 하나가 있습니다(`RULE_IDS`는 이 이름만 담습니다). 요청 계약(`docs/DECIDER_REQUEST.md`)의 `deviceRegistered`가 `true`일 때만 `allow`(`approved`)이고, `false`·값 없음·그 밖의 값은 `deny`와 이유 코드 `device_not_registered`입니다. `request.device`·`request.identity` 같은 계약에 없는 값은 쓰지 않습니다. 응답은 `schema, requestId, decision, reasonCode, ruleIds` 다섯 항목뿐입니다.
-- 이번 단계에 새로 설치할 접속 프로그램은 없습니다. 인증서·CA·서명 키·기기 개인키를 만들거나 Git에 넣지 않았습니다. 기존 자료실 주소와 브라우저 화면, 5단계까지의 기능(서버 로그인, `/api/notes`의 소유자 검사, 원본 직접 접근 차단 SQL 제안)은 그대로입니다.
-- `aleph.config.json`: `step` 6. 나머지 설정은 5단계와 같습니다.
-- `npm run bundle`의 자기 점검(`src/attack-check.mjs`)은 5단계 요청을 그대로 보내고, 미등록 기기 공격(`unregistered_device_request`)은 심판이 맡으므로 **미실행**으로 기록합니다.
+- 판정기 `src/decider.mjs`의 `decide(request)`에 규칙 두 개가 있습니다(`RULE_IDS`: `device_registered`, `step_up_required`). 6단계의 기기 규칙은 그대로입니다: `deviceRegistered`가 `true`가 아니면 `deny`·`device_not_registered`.
+- 새 규칙 `step_up_required`: 등록 기기라도 **세 조건이 함께** 맞을 때만 `step_up`(이유 코드 `step_up_required`)입니다. ① `signals.hour`가 0~5시, ② `signals.network`가 `unusual`(처음 보는 네트워크), ③ `recentEvents`의 `risk_signal` 중 최근 600초 안의 `count` 합이 10 이상(짧은 시간에 많은 읽기). 지역(`region`)은 판단에 쓰지 않으므로 지역 하나만으로는 허용도 차단도 바뀌지 않고 영구 차단도 없습니다. 하나라도 빠지면 `allow`(`approved`)입니다.
+- 입력 검사: `signals.source`가 엔진이 표시한 가상 사건 출처(`judge_fixture`)이고 `network`·`hour` 형식이 맞을 때만 근거로 씁니다. 값이 없거나 `none`·알 수 없는 출처·형식 불일치는 근거가 되지 않으며, 임의의 정상값으로 채우지 않습니다. 브라우저 헤더, `request.device`·`identity`·`geo`·`role` 같은 계약 밖 값은 읽지 않아서 위조해도 신뢰 정보가 되지 않습니다(`test/decider.test.mjs`).
+- 다시 로그인 확인: 엔진이 검증해 넘기는 `stepUp`(`verified: true`, `authAgeSeconds` 0~900)이 있을 때만 이상 접속을 `allow`로 다시 판정합니다. 토큰 원문은 읽거나 기록하지 않습니다. **실제로 새 로그인 전 자료를 막고 새 요청을 허용하는 것은 계약이 준비된 엔진 환경에서만 실측할 수 있어 여기서는 미실행입니다.**
+- `aleph.config.json`: `step` 7. 자기 점검에 `unusual_access_step_up`을 미실행으로 기록합니다. 기존 화면과 5~6단계 기능은 그대로입니다.
 
 **확인 순서**
 
-1. `npm run decider:test`를 실행합니다.
-2. 정상 출력: `통과 · 등록 기기의 정상 요청`(allow)과 `통과 · 미등록 기기의 가상 요청`(deny, `device_not_registered`)이 모두 보이고 종료 코드가 0입니다. 하나라도 `확인 필요`이면 6단계가 아닙니다.
-3. 이 명령은 가상 요청 연습이며 실제 심판 판정이나 반 엔진의 접속 차단 증거가 아닙니다. 미등록 기기 공격은 심판이 판정기에 따로 보냅니다.
-4. 시험 전체: `npm run test:r5 && npm run test:step2 && npm run test:package`
-5. 기존 화면: 등록한 기기의 브라우저에서 배포 주소를 열어 A로 로그인하고 메모 읽기·추가·수정·삭제가 되는지 봅니다.
-
-참고: `npm run fixture:7`은 7단계의 연습이라 지금은 복합 이상 사건이 `allow`로 나와 실패하는 것이 정상입니다.
+1. `npm run decider:test`: `통과` 네 줄이 나와야 합니다 — 등록 기기의 정상 요청(allow), 미등록 기기의 가상 요청(deny·`device_not_registered`), 복합 이상 접속(`step_up`·`step_up_required`), 다시 확인한 복합 이상 접속(allow).
+2. `npm run fixture:7`: `정상 사건: allow`, `복합 이상 사건: step_up`.
+3. `npm run test:decider && npm run test:r5 && npm run test:step2 && npm run test:package`
+4. 위 명령은 가상 요청 연습이며 심판 판정이나 실제 재로그인 차단의 증거가 아닙니다.
 
 ### 이 단계에 남은 약점
 
-- 판정기 규칙은 `deviceRegistered` 하나만 봅니다. 재인증(`stepUp`)·위치·최근 사건은 아직 보지 않아, 등록된 기기에서 오는 이상 접속은 막지 못합니다. 판정기 연습은 가상 요청이며 실제 엔진 연결은 증명하지 않습니다.
+- 이상 접속 기준(0~5시, 10건 이상 등)은 가상 사건에 맞춘 임의 값이고, 실제 사용자의 평소 패턴을 학습한 것이 아닙니다. 세 조건이 모두 맞지 않으면 걸리지 않아, 더 약하게 섞인 이상 접속은 지나갈 수 있습니다. 위치·네트워크 신호는 현재 실제 경로에서는 `unknown`이라 가상 사건에서만 작동합니다. 판정기 연습은 가상 요청이며 실제 엔진 연결과 재로그인 차단은 증명하지 않습니다.
 
 - `supabase/step5-revoke-direct.sql`은 제안이고, 적용 여부와 결과는 이 저장소가 증명하지 않습니다. 실행 전에는 DB의 실제 권한 상태를 `has_table_privilege`로 직접 확인해야 합니다. 원본 직접 요청은 심판이 `anon` 키로 확인하고, 로그인한 사용자 토큰으로 직접 부르는 `authenticated` 경로는 심판이 재현하지 않는 범위입니다.
 - 서버 함수 하나가 모든 메모 접근을 맡습니다. 이 함수의 로그인·소유자 검사가 깨지면 `service_role`이 RLS를 우회하므로 그대로 노출됩니다. 시험은 가짜 응답과 메모리 DB로만 했습니다.

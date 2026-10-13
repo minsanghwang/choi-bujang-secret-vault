@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (![5, 6].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (![5, 6, 7].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -88,5 +88,9 @@ export async function runAttackChecks(config) {
     ...(config.step >= 6 ? [{ attackId: 'unregistered_device_request',
       expected: '등록되지 않은 기기의 요청은 판정기가 deny·device_not_registered로 거부함',
       observed: '미실행: 이 요청은 심판이 보내며, 학생 점검은 npm run decider:test의 가상 요청 연습만 함' }] : []),
+    // 7단계: 이상 접속 추가 확인과 새 로그인 뒤 재판정은 엔진·심판이 보내는 사건이라 학생 점검은 보내지 않습니다.
+    ...(config.step >= 7 ? [{ attackId: 'unusual_access_step_up',
+      expected: '평소와 다른 시각·처음 보는 네트워크·많은 읽기가 함께이면 추가 확인(step_up), 정상 사건은 허용',
+      observed: '미실행: 이 사건은 심판이 보내며, 학생 점검은 npm run decider:test의 가상 요청 연습만 함. 실제 재로그인 전 자료 차단은 엔진 계약 환경에서만 실측' }] : []),
   ];
 }
