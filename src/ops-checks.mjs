@@ -50,6 +50,10 @@ export function buildChecks(config) {
       expected: '200', expect: s => s === 200 },
     { stage: 4, name: 'A 자기 메모 수정', kind: 'normal', as: 'A', method: 'PUT', needs: 'noteId', path: ctx => `/api/notes/${ctx.noteId}`,
       body: () => ({ title: 'ops-table 점검용 가상 메모', body: '수정됨(가상).' }), expected: '200', expect: s => s === 200 },
+    // 5단계: 공개 키(anon)만으로 원본 저장소를 직접 부릅니다. 공개 키는 aleph.config.json의 공개 값이고 비밀값이 아닙니다.
+    { stage: 5, name: '공개 키로 원본 저장소 직접 조회', kind: 'forbidden', as: 'none', noServer: true, method: 'GET', needs: 'originalApi',
+      path: () => config.originalApiUrl, headers: () => ({ apikey: config.database?.publishableKey }),
+      expected: '401·403 또는 빈 목록', expect: (s, d) => s === 401 || s === 403 || (s === 200 && Array.isArray(d) && d.length === 0) },
     { stage: 8, name: 'B가 A의 메모 읽기', kind: 'forbidden', as: 'B', method: 'GET', needs: 'noteId+B', path: ctx => `/api/notes/${ctx.noteId}`,
       expected: '403(또는 404)이고 메모가 없음', expect: (s, d) => DENIED_OR_HIDDEN(s) && !d?.title },
     { stage: 8, name: 'B가 A의 메모 수정', kind: 'forbidden', as: 'B', method: 'PUT', needs: 'noteId+B', path: ctx => `/api/notes/${ctx.noteId}`,
@@ -62,10 +66,14 @@ export function buildChecks(config) {
       body: ctx => ({ title: ctx.notice.title, body: ctx.notice.body }), expected: '403', expect: s => s === 403 },
     { stage: 10, name: 'A가 B 소유로 복원 미리보기', kind: 'forbidden', as: 'A', method: 'POST', needs: 'noteId+B', path: () => '/api/restore',
       body: ctx => ({ id: ctx.noteId, ownerId: ctx.subB }), expected: '403(소유자 불일치)', expect: s => s === 403 },
+    { stage: 10, name: '비로그인 복원 요청', kind: 'forbidden', as: 'none', method: 'POST', path: () => '/api/restore',
+      body: () => ({ id: '00000000-0000-4000-8000-000000000000', dryRun: true }), expected: '401', expect: s => s === 401 },
     { stage: 11, name: '비로그인 기기 상태 조회', kind: 'forbidden', as: 'none', method: 'GET', path: () => '/api/device',
       expected: '401 또는 403', expect: DENIED },
     { stage: 11, name: 'A 기기 상태 조회(쿠키 없는 직접 호출)', kind: 'normal', as: 'A', method: 'GET', path: () => '/api/device',
       expected: '200과 상태 값', expect: (s, d) => s === 200 && typeof d?.state === 'string' },
+    { stage: 11, name: 'A가 본문으로 승인 상태를 보내는 기기 요청', kind: 'forbidden', as: 'A', method: 'POST', path: () => '/api/device',
+      body: () => ({ status: 'approved' }), expected: '400이고 상태가 바뀌지 않음', expect: s => s === 400 },
     { stage: 12, name: '비로그인 작전실 요약', kind: 'forbidden', as: 'none', method: 'GET', path: () => '/api/ops',
       expected: '401 또는 403', expect: (s, d) => DENIED(s) && d?.schema === undefined },
     { stage: 12, name: 'A 작전실 요약', kind: 'normal', as: 'A', method: 'GET', path: () => '/api/ops',
@@ -78,7 +86,6 @@ export function buildChecks(config) {
 
 // 이 절차가 보낼 수 없는 단계: 심판·운영 엔진이 보냅니다. 표에는 미실행으로만 남깁니다.
 export const NOT_RUN_ROWS = Object.freeze([
-  { stage: 5, name: '공개 키로 원본 저장소 직접 조회', kind: 'forbidden', expected: '401·403 또는 빈 목록', reason: 'direct' },
   { stage: 6, name: '미등록 기기 요청 판정', kind: 'forbidden', expected: 'deny · device_not_registered', reason: '판정기 호출은 운영 엔진·심판이 합니다(decider:test는 가상 연습).' },
   { stage: 7, name: '이상 접속 추가 확인(step_up)', kind: 'forbidden', expected: 'step_up', reason: '재판정과 재로그인 사건은 운영 엔진·심판이 보냅니다.' },
   { stage: 9, name: '조회 120건 초과 복합 사건 회수', kind: 'forbidden', expected: 'propose_revocation · burst_read', reason: '사건 전달과 접속 회수 집행은 운영 엔진이 합니다(detect:test는 가상 연습).' },
@@ -95,7 +102,7 @@ export async function runChecks({ config, tokens = {}, fetch: fetchFn = fetch, n
   async function send(check, headers, body, requestId) {
     const url = new URL(check.path(ctx), app);
     const response = await fetchFn(url, { method: check.method, redirect: 'error', signal: AbortSignal.timeout(15000),
-      headers: { ...headers, 'X-Request-Id': requestId, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+      headers: { ...headers, ...(check.headers?.() ?? {}), 'X-Request-Id': requestId, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
     let data = null;
     if (/json/iu.test(response.headers?.get?.('content-type') ?? '')) { try { data = await response.json(); } catch { /* JSON 아님 */ } }
     return { status: response.status, data, requestId: response.headers?.get?.('x-request-id') ?? requestId };
@@ -120,7 +127,8 @@ export async function runChecks({ config, tokens = {}, fetch: fetchFn = fetch, n
     const missing = (check.as === 'A' && !tokens.A) ? 'A 로그인 환경변수가 없음'
       : (needsB && !tokens.B) ? 'B 로그인 환경변수가 없음'
       : (needsNote && !ctx.noteId) ? '앞 단계의 가상 메모가 만들어지지 않음'
-      : (check.needs === 'notice' && !ctx.notice) ? '읽을 수 있는 강사 공지가 없음' : null;
+      : (check.needs === 'notice' && !ctx.notice) ? '읽을 수 있는 강사 공지가 없음'
+      : (check.needs === 'originalApi' && !(typeof config.originalApiUrl === 'string' && config.originalApiUrl.startsWith('https://') && config.database?.publishableKey)) ? 'originalApiUrl 또는 공개 키가 설정에 없음' : null;
     if (missing) { rows.push({ ...base, actual: null, requestId: null, checkedAt: null, result: RESULT.notRun, serverRecord: '해당 없음', note: `미실행: ${missing}` }); continue; }
     const headers = check.as === 'A' ? { Authorization: `Bearer ${tokens.A}` } : check.as === 'B' ? { Authorization: `Bearer ${tokens.B}` }
       : check.as === 'forged' ? { Authorization: forgedBearer(config.identityProvider) } : {};
@@ -139,7 +147,7 @@ export async function runChecks({ config, tokens = {}, fetch: fetchFn = fetch, n
   for (const item of NOT_RUN_ROWS) {
     rows.push({ stage: item.stage, kind: item.kind === 'normal' ? '정상' : '금지', name: item.name, request: '—', expected: item.expected,
       actual: null, requestId: null, checkedAt: null, result: RESULT.notRun, serverRecord: '해당 없음',
-      note: item.reason === 'direct' ? '미실행: 원본 저장소 직접 조회는 npm run bundle의 src/attack-check.mjs가 보냅니다(이 표는 보내지 않음).' : `미실행: ${item.reason}` });
+      note: `미실행: ${item.reason}` });
   }
   return rows.sort((a, b) => a.stage - b.stage);
 }

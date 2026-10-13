@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { RESULT, buildChecks, runChecks, summarize, toMarkdown } from '../src/ops-checks.mjs';
 
 const config = { publicAppUrl: 'https://app.example.test', sampleMarker: 'SAMPLE_NOTE_1',
-  identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' }, database: { url: 'https://p.supabase.co', publishableKey: 'pk-public' } };
+  identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' }, database: { url: 'https://p.supabase.co', publishableKey: 'pk-public' }, originalApiUrl: 'https://p.supabase.co/rest/v1/defense_notes' };
 const jwt = sub => `h.${Buffer.from(JSON.stringify({ sub })).toString('base64url')}.s`;
 const A = jwt('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 const B = jwt('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
@@ -24,6 +24,7 @@ function fakeServer({ leakNotice = false } = {}) {
       return new Response(data === null ? null : JSON.stringify(data), { status, headers: { 'content-type': 'application/json', 'x-request-id': requestId ?? 'none' } });
     };
     if (u.pathname === '/data.json') return reply(404, { error: 'NOT_FOUND' }, false);
+    if (u.host === 'p.supabase.co') return reply(headers.apikey === 'pk-public' ? 200 : 401, [], false);   // 공개 키 직접 조회: 빈 목록
     if (u.pathname === '/api/ops') {
       if (who !== 'A') return reply(401, { error: 'LOGIN_REQUIRED' });
       const id = u.searchParams.get('requestId');
@@ -40,6 +41,7 @@ function fakeServer({ leakNotice = false } = {}) {
     if (u.pathname === '/api/notices') return reply(200, [{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', title: '공지', body: '내용' }]);
     if (u.pathname.startsWith('/api/notices/')) return reply(403, { error: 'FORBIDDEN' });
     if (u.pathname === '/api/restore') return reply(403, { error: 'NOT_OWNER' });
+    if (u.pathname === '/api/device' && options.method === 'POST') return reply(options.body && options.body !== '{}' ? 400 : 201, options.body && options.body !== '{}' ? { error: 'INVALID_DEVICE_REQUEST' } : { state: 'pending' });
     if (u.pathname === '/api/device') return reply(200, { state: 'none' });
     return reply(404, { error: 'NOT_FOUND' });
   };
@@ -62,13 +64,13 @@ test('계정이 모두 있으면 요청마다 요청 ID·확인 시각·기대·
   }
   const logged = ran.filter(row => !['해당 없음'].includes(row.serverRecord));
   assert.ok(logged.length >= 16 && logged.every(row => row.serverRecord === '일치'));     // /api/ops 두 줄도 서버 기록과 대조됨
-  assert.equal(ran.filter(row => row.serverRecord === '해당 없음').length, 1);              // 정적 /data.json만 기록 대상이 아님
+  assert.deepEqual(ran.filter(row => row.serverRecord === '해당 없음').map(row => row.name).sort(), ['공개 키로 원본 저장소 직접 조회', '정적 /data.json 공개']);   // 우리 서버를 거치지 않는 두 줄만 기록 대상이 아님
   assert.ok(rows.some(row => row.kind === '정상') && rows.some(row => row.kind === '금지'));       // 허용과 거부 모두 측정 결과로 남음
 });
 
 test('판정기·탐지·회수·41종 줄은 항상 미실행이고 통과로 표시되지 않는다', async () => {
   const rows = await runChecks({ config, tokens: { A, B }, fetch: fakeServer().fetch, uuid, now });
-  for (const stage of [5, 6, 7, 9]) assert.equal(rows.find(row => row.stage === stage).result, RESULT.notRun);
+  for (const stage of [6, 7, 9]) assert.equal(rows.find(row => row.stage === stage).result, RESULT.notRun);
   const last = rows.find(row => row.name === '41종 총공세');
   assert.equal(last.result, RESULT.notRun);
   assert.equal(last.requestId, null);
@@ -101,4 +103,17 @@ test('요청을 보내지 못하면 미실행이고, 표와 파일에는 토큰�
   assert.doesNotMatch(dump, /Bearer|eyJ|password|ops-table 점검용 가상 메모|자동 생성/u);
   assert.ok(!dump.includes(A) && !dump.includes(B));
   assert.ok(buildChecks(config).length >= 18);
+});
+
+test('5단계 공개 키 직접 조회·비로그인 복원·본문으로 승인 상태를 보내는 기기 요청도 실제로 보내 결과를 남긴다', async () => {
+  const server = fakeServer();
+  const rows = await runChecks({ config, tokens: { A, B }, fetch: server.fetch, uuid, now });
+  const direct = rows.find(row => row.name === '공개 키로 원본 저장소 직접 조회');
+  assert.deepEqual([direct.result, direct.actual, direct.serverRecord], [RESULT.match, 'HTTP 200', '해당 없음']);   // 빈 목록 = 메모가 보이지 않음
+  assert.ok(server.calls.includes('GET /rest/v1/defense_notes as none'));
+  assert.deepEqual([rows.find(row => row.name === '비로그인 복원 요청').result, rows.find(row => row.name === '비로그인 복원 요청').actual], [RESULT.match, 'HTTP 401 LOGIN_REQUIRED']);
+  const device = rows.find(row => row.name === 'A가 본문으로 승인 상태를 보내는 기기 요청');
+  assert.deepEqual([device.result, device.actual], [RESULT.match, 'HTTP 400 INVALID_DEVICE_REQUEST']);
+  const noKey = await runChecks({ config: { ...config, originalApiUrl: undefined }, tokens: { A, B }, fetch: fakeServer().fetch, uuid, now });
+  assert.match(noKey.find(row => row.name === '공개 키로 원본 저장소 직접 조회').note, /originalApiUrl 또는 공개 키가 설정에 없음/u);
 });
