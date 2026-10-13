@@ -193,30 +193,32 @@
       const o = d.detection?.observed ?? {};
       blocks.push(opsBlock('탐지 사건', o.label, [
         `규칙: ${d.detection?.rule?.reasonCode} (${d.detection?.rule?.windowMinutes}분 안 GET ${d.detection?.rule?.limit}건 초과) [${d.detection?.rule?.source}]`,
-        `서버가 본 GET 사건 ${dash(o.getEvents)}건, 사용자(가명) ${dash(o.subjects)}명, 10분 최대 ${dash(o.busiestWindow)}건, detect() 결과: ${dash(o.result?.action)}`,
-        `엔진의 사건 전달: ${d.detection?.engineDelivery?.label ?? '—'}`]));
+        `서버 기록의 GET 줄: 전체 ${dash(o.getRows)} = 로그인 사용자 ${dash(o.getRowsWithUser)} + 비로그인 ${dash(o.getRowsWithoutUser)}`,
+        `로그인 사용자(가명) ${dash(o.users)}명, 10분 안 가장 많은 GET 줄 수 ${dash(o.busiestWindowRows)} (줄을 센 값이며 판정이 아닙니다)`,
+        `탐지 판단·회수 제안(엔진 결과): ${d.detection?.engineResult?.label ?? '—'}`]));
       const dv = d.revocation?.devices ?? {};
       blocks.push(opsBlock('회수 상태', dv.label, [
-        `기기 승인 표: 대기 ${dash(dv.pending)} · 승인 ${dash(dv.approved)} · 해제 ${dash(dv.revoked)} (합계 ${dash(dv.total)})`,
-        `회수 제안(탐지 결과): ${dash(d.revocation?.proposals?.count)}건 [${d.revocation?.proposals?.label ?? '—'}]`,
-        `접속 회수 집행: ${d.revocation?.enforcement?.label ?? '—'}`]));
+        `기기 승인 표 줄 수: 대기 ${dash(dv.pending)} · 승인 ${dash(dv.approved)} · 해제 ${dash(dv.revoked)} · 그 밖 ${dash(dv.other)} (합계 ${dash(dv.total)})${dv.truncated ? ' — 일부만 읽음' : ''}`,
+        `회수 제안: ${d.revocation?.proposals?.label ?? '—'} · 접속 회수 집행: ${d.revocation?.enforcement?.label ?? '—'}`]));
       const r = d.recovery ?? {};
+      const ra = r.restoreAudit ?? {};
       blocks.push(opsBlock('복구 버전', r.backups?.label, [
         `정책 사본 ${dash(r.policy?.version)} 지문 ${dash(r.policy?.sha256Prefix)}… [${r.policy?.label ?? '—'}]`,
-        `메모 사본 ${dash(r.backups?.count)}건`,
-        `복원 감사: 계획 ${dash(r.restoreAudit?.planned)} · 시작 ${dash(r.restoreAudit?.started)} · 완료 ${dash(r.restoreAudit?.restored)} · 거부 ${dash(r.restoreAudit?.denied)} · 실패 ${dash(r.restoreAudit?.failed)}`]));
+        `메모 사본 표 줄 수 ${dash(r.backups?.rows)}${r.backups?.truncated ? ' — 일부만 읽음' : ''}`,
+        `복원 감사 줄 수: 계획 ${dash(ra.planned)} · 시작 ${dash(ra.started)} · 완료 ${dash(ra.restored)} · 거부 ${dash(ra.denied)} · 실패 ${dash(ra.failed)} · 추적 ${dash(ra.trace)} · 그 밖 ${dash(ra.other)} (합계 ${dash(ra.total)})`]));
       const q = d.requests ?? {};
-      const rq = opsBlock('요청 기록(최근 24시간)', q.label, [
+      const rq = opsBlock('요청 기록', q.label, [
+        `${q.scope ?? ''}${q.oldestSeq != null ? ` · 번호 ${q.oldestSeq}~${q.newestSeq}` : ''}`,
         `전체 ${dash(q.total)} = 허용 ${dash(q.allowed)} + 거부 ${dash(q.denied)} + 오류 ${dash(q.errors)}`,
-        ...(q.byRoute ?? []).map(x => `${x.route}: ${x.total}건 (허용 ${x.allowed}, 거부 ${x.denied}, 오류 ${x.errors})`),
+        ...(q.byRoute ?? []).map(x => `${x.route}: ${x.total}줄 (허용 ${x.allowed}, 거부 ${x.denied}, 오류 ${x.errors})`),
         ...(q.note ? [q.note] : [])]);
       if (Array.isArray(q.records) && q.records.length) {
         const table = document.createElement('table');
         const head = table.insertRow();
-        for (const name of ['시각', '요청 ID', '메서드', '경로', '상태', '이유']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
+        for (const name of ['번호', '시각', '요청 ID', '메서드', '경로', '상태', '이유']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
         for (const x of q.records) {
           const row = table.insertRow();
-          for (const value of [x.at, x.requestId, x.method, x.route, x.status, x.reason ?? '—']) row.insertCell().textContent = String(value);
+          for (const value of [x.seq, x.at, x.requestId, x.method, x.route, x.status, x.reason ?? '—']) row.insertCell().textContent = String(value);
         }
         rq.append(table);
       }

@@ -1,16 +1,17 @@
 // 12단계: 탈환 작전실이 읽는 요약.  GET /api/ops  (로그인 필요, 브라우저 로그인은 승인된 기기 쿠키도 필요)
 //   GET /api/ops                  → 판정기 규칙·탐지·회수·복구·요청 기록 요약
 //   GET /api/ops?requestId=<UUID> → 그 요청 ID의 서버 기록 한 줄(1~11단계 표 절차가 실제 결과를 대조할 때 씀)
-// 모든 수치는 서버 기록(요청 기록·기기 표·복원 감사·사본 표)에서 읽은 줄 수이고, 화면은 이 응답의 값만 보여 줍니다.
+// 모든 수치는 서버 기록(요청 기록·기기 표·복원 감사·사본 표)에서 읽은 "줄 수"이고, 화면은 이 응답의 값만 보여 줍니다.
+// 계산해서 채우는 결과는 없습니다: 판정·탐지 판단·회수 제안처럼 엔진이 내는 결과는 만들지 않고 미실행으로 둡니다.
+// 요청 기록 수치는 기록 표 전체(최근 2000건 보관)를 한 시점(맨 끝 번호)에서 잘라 읽은 것이라, 표를 직접 세면 같은 값이 나옵니다.
 // 각 묶음에는 라벨이 붙습니다: 확인됨(서버 기록) / 코드에서 읽음 / 미실행 / 확인하지 못함. 코드에서 읽은 규칙과 실제 실행 결과를 섞지 않습니다.
 // 메모 제목·내용·사용자 ID·토큰은 읽지도 돌려주지도 않습니다(조회 항목에 title·content가 없음).
 import { RULE_IDS, ROUTE_TABLE } from './decider.mjs';
-import { detect } from './detect.mjs';
 import { requireLogin } from './notes-service.mjs';
 import { PINNED_SHA256 } from './policy-restore.mjs';
 
 export const LABEL = Object.freeze({ observed: '확인됨(서버 기록)', code: '코드에서 읽음', notRun: '미실행', unknown: '확인하지 못함' });
-const WINDOW_HOURS = 24;
+const LOG_LIMIT = 2100;              // 기록 표는 최근 2000건만 보관하므로 이보다 많이 읽을 일이 없습니다.
 const ROW_LIMIT = 1000;
 const RECORD_LIMIT = 30;
 const BURST = Object.freeze({ reasonCode: 'burst_read', windowMinutes: 10, limit: 120 });
@@ -38,10 +39,10 @@ const mask = id => `${String(id).slice(0, 8)}…`;
 const maskedRecord = row => ({ at: row.at, requestId: mask(row.request_id), method: row.method, route: row.route, status: row.status, reason: row.reason ?? null, auth: row.auth });
 const classOf = status => (status >= 500 ? 'errors' : status >= 400 ? 'denied' : 'allowed');
 
-// 같은 사용자의 GET이 10분 안에 가장 많았던 건수(참고 수치). 판정은 detect()가 합니다.
-function busiestWindow(events) {
+// 같은 사용자(가명)의 GET 줄이 10분 안에 가장 많았던 줄 수. 줄을 센 값이며 판정이 아닙니다.
+function busiestWindow(rows) {
   const bySub = new Map();
-  for (const event of events) { const t = Date.parse(event.at); if (Number.isFinite(t)) bySub.set(event.identity.sub, [...(bySub.get(event.identity.sub) ?? []), t]); }
+  for (const row of rows) { const t = Date.parse(row.at); if (Number.isFinite(t)) bySub.set(row.actor, [...(bySub.get(row.actor) ?? []), t]); }
   let best = 0;
   for (const times of bySub.values()) {
     times.sort((a, b) => a - b);
@@ -54,7 +55,10 @@ function busiestWindow(events) {
   return best;
 }
 
-function requestsBlock(rows) {
+// 기록 표에서 읽지 못하는 요청: 이 표에 없는 것은 화면 수치에도 없습니다.
+const NOT_LOGGED = '기록 대상이 아닌 요청: /api/auth/*, /api/ops, 정적 파일. 기록 표는 최근 2000건만 보관합니다.';
+
+function requestsBlock(rows, truncated) {
   if (rows === null) return { label: LABEL.unknown, note: '요청 기록 표(defense_ops_log)를 읽지 못했습니다. supabase/step12-ops.sql 적용 여부를 확인하세요.', total: null };
   const sums = { allowed: 0, denied: 0, errors: 0 };
   const routes = new Map();
@@ -65,35 +69,44 @@ function requestsBlock(rows) {
     entry.total += 1; entry[kind] += 1;
     routes.set(row.route, entry);
   }
-  return { label: LABEL.observed, windowHours: WINDOW_HOURS, truncated: rows.length >= ROW_LIMIT, total: rows.length, ...sums,
-    byRoute: [...routes.values()].sort((a, b) => a.route.localeCompare(b.route)), records: rows.slice(0, RECORD_LIMIT).map(maskedRecord) };
+  return { label: LABEL.observed, scope: '기록 표 전체(맨 끝 번호까지 한 시점에서 읽음)', note: NOT_LOGGED, truncated, total: rows.length, ...sums,
+    newestSeq: rows[0]?.id ?? null, oldestSeq: rows.at(-1)?.id ?? null, newestAt: rows[0]?.at ?? null, oldestAt: rows.at(-1)?.at ?? null,
+    byRoute: [...routes.values()].sort((a, b) => a.route.localeCompare(b.route)),
+    records: rows.slice(0, RECORD_LIMIT).map(row => ({ seq: row.id, ...maskedRecord(row) })) };
 }
 
+// 탐지: 규칙은 코드에서 읽은 값이고, 서버 기록에서는 GET 줄을 센 값만 보여 줍니다. detect() 결과·회수 제안은 계산해 채우지 않습니다.
 function detectionBlock(rows) {
   const rule = { ...BURST, source: LABEL.code };
-  const engineDelivery = { label: LABEL.notRun, note: '운영 엔진이 가상 사건을 detect()에 전달하고 회수를 집행하며, 우리 서버는 그 결과를 볼 수 없습니다.' };
-  if (rows === null) return { rule, observed: { label: LABEL.unknown }, engineDelivery };
-  const events = rows.filter(row => row.method === 'GET' && typeof row.actor === 'string')
-    .map(row => ({ at: row.at, method: 'GET', identity: { sub: row.actor } }));
-  const result = detect(events);
-  return { rule, engineDelivery, observed: { label: LABEL.observed, windowHours: WINDOW_HOURS, getEvents: events.length,
-    subjects: new Set(events.map(event => event.identity.sub)).size, busiestWindow: busiestWindow(events),
-    result: { action: result.action, ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}), ...(result.subject ? { subject: mask(result.subject).slice(0, 7) } : {}) } } };
+  const engine = { label: LABEL.notRun, note: '사건을 detect()에 전달하고 회수를 제안·집행하는 것은 운영 엔진입니다. 우리 서버는 그 결과를 볼 수 없어 만들지 않습니다.' };
+  if (rows === null) return { rule, observed: { label: LABEL.unknown }, engineResult: engine, engineDelivery: engine };
+  const gets = rows.filter(row => row.method === 'GET');
+  const withActor = gets.filter(row => typeof row.actor === 'string');
+  return { rule, engineResult: engine, engineDelivery: engine,
+    observed: { label: LABEL.observed, scope: '기록 표 전체', getRows: gets.length, getRowsWithUser: withActor.length, getRowsWithoutUser: gets.length - withActor.length,
+      users: new Set(withActor.map(row => row.actor)).size, busiestWindowRows: busiestWindow(withActor) } };
 }
 
-const countBy = (rows, key, names) => Object.fromEntries(names.map(name => [name, rows.filter(row => row[key] === name).length]));
+const countBy = (rows, key, names) => {
+  const counts = Object.fromEntries(names.map(name => [name, rows.filter(row => row[key] === name).length]));
+  return { ...counts, other: rows.length - Object.values(counts).reduce((a, b) => a + b, 0), total: rows.length };
+};
 
 export async function buildSummary(deps = {}) {
-  const since = new Date((deps.now?.() ?? Date.now()) - WINDOW_HOURS * 3600 * 1000).toISOString();
+  // ① 기록 표의 맨 끝 번호를 먼저 정하고, ② 그 번호까지만 읽습니다. 읽는 동안 새 줄이 들어와도 합계와 줄 수가 어긋나지 않습니다.
+  const head = await readOrNull('defense_ops_log', { select: 'id', order: 'id.desc', limit: '1' }, deps);
+  const snapshot = head === null ? null : (head[0]?.id ?? 0);
   const [log, devices, audit, backups] = await Promise.all([
-    readOrNull('defense_ops_log', { select: 'at,request_id,method,route,status,reason,auth,actor', at: `gte.${since}`, order: 'at.desc', limit: String(ROW_LIMIT) }, deps),
+    snapshot === null ? null : readOrNull('defense_ops_log', { select: 'id,at,request_id,method,route,status,reason,auth,actor', id: `lte.${snapshot}`, order: 'id.desc', limit: String(LOG_LIMIT) }, deps),
     readOrNull('defense_devices', { select: 'status', limit: String(ROW_LIMIT) }, deps),
-    readOrNull('defense_restore_audit', { select: 'outcome', outcome: 'neq.trace', limit: String(ROW_LIMIT) }, deps),
+    readOrNull('defense_restore_audit', { select: 'outcome', limit: String(ROW_LIMIT) }, deps),
     readOrNull('defense_notes_backup', { select: 'note_id', limit: String(ROW_LIMIT) }, deps),
   ]);
-  const detection = detectionBlock(log);
+  const logTruncated = Array.isArray(log) && log.length >= LOG_LIMIT;
+  const partial = rows => Array.isArray(rows) && rows.length >= ROW_LIMIT;
   const states = devices && countBy(devices, 'status', ['pending', 'approved', 'revoked']);
-  const outcomes = audit && countBy(audit, 'outcome', ['planned', 'started', 'restored', 'denied', 'failed']);
+  const outcomes = audit && countBy(audit, 'outcome', ['planned', 'started', 'restored', 'denied', 'failed', 'trace']);
+  const detection = detectionBlock(log);
   return {
     schema: 'aleph.ops.v1',
     generatedAt: new Date(deps.now?.() ?? Date.now()).toISOString(),
@@ -101,13 +114,13 @@ export async function buildSummary(deps = {}) {
     decider: { label: LABEL.code, ruleIds: [...RULE_IDS], routes: ROUTE_TABLE.map(item => ({ ...item })),
       realDecisions: { label: LABEL.notRun, note: '운영 엔진·심판이 decide()를 호출하며, 우리 서버는 그 판정 결과를 볼 수 없습니다.' } },
     detection,
-    revocation: { devices: devices === null ? { label: LABEL.unknown } : { label: LABEL.observed, ...states, total: devices.length },
-      proposals: { label: detection.observed.label, count: detection.observed.result?.action === 'propose_revocation' ? 1 : 0 },
-      enforcement: { label: LABEL.notRun, note: '접속 회수의 집행과 걸린 시간은 운영 엔진이 정합니다. 우리 서버가 확인한 것은 기기 승인 상태뿐입니다.' } },
+    revocation: { devices: devices === null ? { label: LABEL.unknown } : { label: LABEL.observed, truncated: partial(devices), ...states },
+      proposals: { label: LABEL.notRun, note: '회수 제안은 운영 엔진이 탐지 결과로 내며, 우리 서버는 제안 건수를 만들지 않습니다.' },
+      enforcement: { label: LABEL.notRun, note: '접속 회수의 집행과 걸린 시간은 운영 엔진이 정합니다. 우리 서버가 확인한 것은 기기 승인 상태 줄 수뿐입니다.' } },
     recovery: { policy: { label: LABEL.code, version: Object.keys(PINNED_SHA256).at(-1), sha256Prefix: Object.values(PINNED_SHA256).at(-1).slice(0, 12) },
-      backups: backups === null ? { label: LABEL.unknown } : { label: LABEL.observed, count: backups.length },
-      restoreAudit: audit === null ? { label: LABEL.unknown } : { label: LABEL.observed, ...outcomes, total: audit.length } },
-    requests: requestsBlock(log),
+      backups: backups === null ? { label: LABEL.unknown } : { label: LABEL.observed, truncated: partial(backups), rows: backups.length },
+      restoreAudit: audit === null ? { label: LABEL.unknown } : { label: LABEL.observed, truncated: partial(audit), ...outcomes } },
+    requests: requestsBlock(log, logTruncated),
     unrun: { attacks41: { label: LABEL.notRun, note: '12단계 41종 공격 방어는 심판이 실행합니다. 이 화면은 그 결과를 표시하지 않으므로 아직 아무 결과도 없습니다.' } },
   };
 }

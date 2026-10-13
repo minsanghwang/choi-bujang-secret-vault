@@ -17,7 +17,7 @@ async function withEnv(fn) {
   try { return await fn(); } finally { for (const n of names) { if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n]; } }
 }
 const iso = offsetSeconds => new Date(NOW - offsetSeconds * 1000).toISOString();
-const logRow = (n, extra = {}) => ({ at: iso(n), request_id: `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`, method: 'GET', route: 'notes', status: 200, reason: null, auth: 'bearer', actor: 'a1b2c3d4e5f6', ...extra });
+const logRow = (n, extra = {}) => ({ id: n, at: iso(n), request_id: `${String(n).padStart(8, '0')}-1111-4111-8111-111111111111`, method: 'GET', route: 'notes', status: 200, reason: null, auth: 'bearer', actor: 'a1b2c3d4e5f6', ...extra });
 // 표 이름별 가짜 서버. 조회한 열(select)을 기록해 메모 제목·내용을 읽지 않았는지 확인합니다.
 function world({ log = [], devices = [], audit = [], backups = [], missing = [] } = {}) {
   const w = { selects: [], tables: { defense_ops_log: log, defense_devices: devices, defense_restore_audit: audit, defense_notes_backup: backups } };
@@ -27,6 +27,9 @@ function world({ log = [], devices = [], audit = [], backups = [], missing = [] 
     w.selects.push({ table, select: u.searchParams.get('select') });
     if (missing.includes(table)) return new Response('{}', { status: 404 });
     let rows = w.tables[table];
+    const upTo = u.searchParams.get('id');                                      // 맨 끝 번호까지만 읽는 조회(id=lte.N)
+    if (upTo) rows = rows.filter(row => row.id <= Number(upTo.replace(/^lte\./u, '')));
+    if (u.searchParams.get('order') === 'id.desc') rows = [...rows].sort((a, b) => b.id - a.id);
     const id = u.searchParams.get('request_id');
     if (id) rows = rows.filter(row => row.request_id === id.replace(/^eq\./u, ''));
     return new Response(JSON.stringify(rows.slice(0, Number(u.searchParams.get('limit') ?? Infinity))), { status: 200 });
@@ -69,6 +72,29 @@ test('화면의 수치는 가린 서버 기록과 같다: 합계 = 허용+거부
   assert.deepEqual(r.byRoute.map(item => [item.route, item.total, item.allowed, item.denied, item.errors]), [['notes', 4, 1, 2, 1], ['restore', 2, 1, 1, 0]]);
   assert.equal(r.records.length, 6);                                              // 가린 기록 줄 수 = 합계(30줄 이내)
   assert.equal(r.label, '확인됨(서버 기록)');
+  assert.equal(r.total, log.length);                                              // 기록 표를 직접 센 값과 같다(24시간 같은 자르기 없음)
+  assert.deepEqual([r.newestSeq, r.oldestSeq], [6, 1]);
+  assert.deepEqual(r.records.map(item => item.seq), [6, 5, 4, 3, 2, 1]);          // 화면의 번호로 표의 줄을 찾을 수 있다
+  assert.match(r.note, /\/api\/auth\/\*.*\/api\/ops.*정적 파일/u);                // 기록하지 않는 요청을 화면이 밝힌다
+}));
+
+test('오래된 기록도 24시간 같은 기준으로 자르지 않고 표 전체를 센다', () => withEnv(async () => {
+  const old = Array.from({ length: 7 }, (_, i) => logRow(i + 1, { at: '2025-01-01T00:00:00.000Z' }));
+  const r = (await summary(world({ log: old }))).body.requests;
+  assert.equal(r.total, 7);
+  assert.equal(r.oldestAt, '2025-01-01T00:00:00.000Z');
+}));
+
+test('읽는 동안 새 줄이 들어와도 맨 끝 번호까지만 세어 합계가 어긋나지 않는다', () => withEnv(async () => {
+  const w = world({ log: [logRow(1), logRow(2)] });
+  const base = w.fetch;
+  w.fetch = async url => {
+    const res = await base(url);
+    if (new URL(url).searchParams.get('limit') === '1') w.tables.defense_ops_log.push(logRow(3));   // 번호를 정한 직후 새 줄이 생김
+    return res;
+  };
+  const r = (await summary(w)).body.requests;
+  assert.deepEqual([r.total, r.allowed + r.denied + r.errors, r.newestSeq], [2, 2, 2]);
 }));
 
 test('가린 기록은 30줄까지만 보여 주고, 그때도 합계는 읽은 기록 전체와 같다', () => withEnv(async () => {
@@ -100,31 +126,36 @@ test('판정기 규칙과 탐지 규칙은 코드에서 읽음, 판정·사건·
   assert.equal(body.detection.rule.source, '코드에서 읽음');
   assert.equal(body.detection.engineDelivery.label, '미실행');
   assert.equal(body.revocation.enforcement.label, '미실행');
+  assert.equal(body.revocation.proposals.label, '미실행');                              // 회수 제안 건수를 만들어 채우지 않음
+  assert.equal(body.detection.engineResult.label, '미실행');
   assert.equal(body.unrun.attacks41.label, '미실행');
-  assert.doesNotMatch(JSON.stringify(body), /통과|passed|clear/iu);                  // 성공 문구를 만들지 않음
+  assert.doesNotMatch(JSON.stringify(body), /통과|passed|clear|propose_revocation|"action"/iu);                  // 성공 문구를 만들지 않음
 }));
 
-test('탐지 요약은 서버 기록의 GET 사건에 detect()를 실제로 적용하고, 120건을 넘을 때만 회수 제안이다', () => withEnv(async () => {
+test('탐지 요약은 서버 기록의 GET 줄 수만 세고, 판정·회수 제안은 만들어 채우지 않는다', () => withEnv(async () => {
   const burst = n => Array.from({ length: n }, (_, i) => logRow(i + 1, { actor: 'abcdef012345' }));
-  const calm = (await summary(world({ log: burst(120) }))).body;                     // 정확히 120건은 의심하지 않음
-  assert.deepEqual([calm.detection.observed.getEvents, calm.detection.observed.busiestWindow, calm.detection.observed.result], [120, 120, { action: 'observe' }]);
-  assert.equal(calm.revocation.proposals.count, 0);
-  const hot = (await summary(world({ log: burst(121) }))).body;
-  assert.equal(hot.detection.observed.result.action, 'propose_revocation');
-  assert.equal(hot.detection.observed.result.reasonCode, 'burst_read');
-  assert.ok(!JSON.stringify(hot).includes('abcdef012345'));                           // 대상은 가려서만 보임
-  assert.equal(hot.revocation.proposals.count, 1);
-  const mixed = (await summary(world({ log: [...burst(100), ...Array.from({ length: 50 }, (_, i) => logRow(200 + i, { actor: 'other0000000', method: 'POST' }))] }))).body;
-  assert.equal(mixed.detection.observed.result.action, 'observe');                    // 다른 사용자·GET이 아닌 요청은 합산하지 않음
+  for (const n of [120, 121, 300]) {                                                  // 120을 넘어도 우리 쪽이 회수 제안을 만들지 않는다
+    const d = (await summary(world({ log: burst(n) }))).body.detection;
+    assert.deepEqual([d.observed.getRows, d.observed.getRowsWithUser, d.observed.getRowsWithoutUser, d.observed.users, d.observed.busiestWindowRows], [n, n, 0, 1, n]);
+    assert.equal(d.engineResult.label, '미실행');
+    assert.equal(d.observed.result, undefined);
+  }
+  const mixed = (await summary(world({ log: [...burst(100), ...Array.from({ length: 50 }, (_, i) => logRow(200 + i, { actor: 'other0000000', method: 'POST' })),
+    ...Array.from({ length: 3 }, (_, i) => logRow(300 + i, { actor: null, auth: 'none', status: 401 }))] }))).body.detection;
+  assert.deepEqual([mixed.observed.getRows, mixed.observed.getRowsWithUser, mixed.observed.getRowsWithoutUser, mixed.observed.users], [103, 100, 3, 1]);   // GET이 아닌 요청은 세지 않고, 비로그인 GET은 따로 보임
+  assert.ok(!JSON.stringify(mixed).includes('abcdef012345'));                         // 사용자 가명은 보이지 않음
 }));
 
 test('회수 상태·복구 요약은 기기 표·복원 감사·사본 표의 줄 수와 같다', () => withEnv(async () => {
   const w = world({ devices: [{ status: 'approved' }, { status: 'pending' }, { status: 'pending' }, { status: 'revoked' }],
-    audit: [{ outcome: 'planned' }, { outcome: 'started' }, { outcome: 'restored' }, { outcome: 'denied' }, { outcome: 'denied' }], backups: Array.from({ length: 5 }, (_, i) => ({ note_id: String(i) })) });
+    audit: [{ outcome: 'planned' }, { outcome: 'started' }, { outcome: 'restored' }, { outcome: 'denied' }, { outcome: 'denied' }, { outcome: 'trace' }, { outcome: 'weird' }], backups: Array.from({ length: 5 }, (_, i) => ({ note_id: String(i) })) });
   const body = (await summary(w)).body;
-  assert.deepEqual([body.revocation.devices.pending, body.revocation.devices.approved, body.revocation.devices.revoked, body.revocation.devices.total], [2, 1, 1, 4]);
-  assert.deepEqual([body.recovery.restoreAudit.planned, body.recovery.restoreAudit.restored, body.recovery.restoreAudit.denied, body.recovery.restoreAudit.total], [1, 1, 2, 5]);
-  assert.equal(body.recovery.backups.count, 5);
+  const dv = body.revocation.devices;
+  assert.deepEqual([dv.pending, dv.approved, dv.revoked, dv.other, dv.total], [2, 1, 1, 0, 4]);
+  const ra = body.recovery.restoreAudit;
+  assert.deepEqual([ra.planned, ra.restored, ra.denied, ra.trace, ra.other, ra.total], [1, 1, 2, 1, 1, 7]);   // 감사 표 전체 줄 수(추적 줄도 포함)
+  assert.equal(ra.total, ra.planned + ra.started + ra.restored + ra.denied + ra.failed + ra.trace + ra.other);
+  assert.equal(body.recovery.backups.rows, 5);
   assert.deepEqual([body.recovery.policy.version, body.recovery.policy.sha256Prefix], ['v1', '364f5a32af39']);
 }));
 
