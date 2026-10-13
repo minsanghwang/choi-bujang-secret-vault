@@ -61,6 +61,7 @@ const world = (extra = {}) => fakeDb({
     { id: NOTICE, owner_id: null, zone: 'notice', title: '공지', content: '공지 내용' },
     { id: B_NOTE, owner_id: B, zone: 'note', title: '침해로 바뀐 제목', content: '침해로 바뀐 내용' }],
   backups: [backupRow(), { ...backupRow({ note_id: A_NOTE, owner_id: A, title: 'A 메모', content: 'a 내용' }), content_sha256: noteHash('A 메모', 'a 내용') }], ...extra });
+const real = db => db.tables.defense_restore_audit.filter(r => r.outcome !== 'trace');
 const post = (db, headers, body, method = 'POST') => call({ method, headers, body }, { verify, fetch: db.fetch });
 const want = (extra = {}) => ({ id: B_NOTE, ownerId: B, contentSha256: GOOD, ...extra });
 
@@ -75,7 +76,7 @@ test('B가 자기 메모 한 건을 복원하면 ID·소유자·내용 해시가
   assert.equal(live.owner_id, B);                                                // 소유자가 사본과 같음
   assert.equal(JSON.stringify(db.tables.defense_notes.filter(r => r.id !== B_NOTE)), others);   // A 메모·공지는 그대로
   assert.equal(db.tables.defense_notes_backup.length, 2);                        // 사본은 그대로
-  assert.deepEqual(db.tables.defense_restore_audit.map(r => r.outcome), ['started', 'restored']);
+  assert.deepEqual(real(db).map(r => r.outcome), ['started', 'restored']);
   assert.ok(!JSON.stringify(res.body).includes(SECRET_TEXT));                    // 응답에 메모 본문이 없음
   assert.ok(db.calls.every(c => !(c.method === 'DELETE')));                      // 어떤 행도 지우지 않음
 }));
@@ -106,7 +107,7 @@ test('다른 사람(A)이 B의 메모를 복원하려 하거나 강사가 아니
   assert.equal(res.status, 403);
   assert.equal(res.headers.get('x-deny-reason'), 'not_owner');
   assert.ok(!db.calls.some(c => c.table === 'defense_notes_backup'));
-  assert.deepEqual(db.tables.defense_restore_audit.map(r => r.outcome), ['denied']);
+  assert.deepEqual(real(db).map(r => r.outcome), ['denied']);
   // A가 본문에 자기를 소유자로 적고 B의 번호를 요청해도 사본의 소유자와 달라 거부된다.
   const forged = await post(db, asA, want({ ownerId: A }));
   assert.equal(forged.status, 404);                                              // A의 이름으로 찾으면 B의 사본은 보이지 않음
@@ -116,7 +117,7 @@ test('다른 사람(A)이 B의 메모를 복원하려 하거나 강사가 아니
 test('서버에 등록된 강사는 다른 사람의 메모 한 건을 복원할 수 있다', () => withEnv({ INSTRUCTOR_USER_IDS: TEACHER }, async () => {
   const db = world();
   assert.equal((await post(db, asTeacher, want())).status, 200);
-  assert.equal(db.tables.defense_restore_audit[0].actor, TEACHER);
+  assert.equal(real(db)[0].actor, TEACHER);
 }));
 
 test('ID·소유자·내용 해시 중 하나라도 사본과 다르면 쓰지 않는다', () => withEnv({}, async () => {
@@ -158,7 +159,7 @@ test('본문 형식이 틀리거나 로그인이 없거나 POST가 아니면 쓰
   }
   assert.equal((await post(db, {}, want())).status, 401);
   assert.equal((await post(db, asB, want(), 'GET')).status, 405);
-  assert.equal(db.calls.length, 0);
+  assert.ok(db.calls.every(c => c.table === 'defense_restore_audit' && c.method === 'POST'));   // 사본·메모 표는 읽지도 쓰지도 않음
 }));
 
 test('감사 기록을 남기지 못하면 쓰지 않고, 감사 표에는 지우기·고치기 요청을 보내지 않는다', () => withEnv({}, async () => {
@@ -215,4 +216,14 @@ test('사본 내용이 저장된 해시와 맞지 않으면 id만 보내도 쓰�
   assert.equal(res.status, 409);
   assert.equal(res.headers.get('x-deny-reason'), 'backup_mismatch');
   assert.equal(JSON.stringify(db.tables.defense_notes), before);
+}));
+
+test('모든 요청은 값 없이 한 줄의 흔적(메서드·상태·인증 방식·본문 키 이름)만 남긴다', () => withEnv({}, async () => {
+  const db = world();
+  await post(db, asB, { id: B_NOTE, 비밀: 'x', contentSha256: GOOD });
+  await post(db, {}, { noteId: B_NOTE });
+  await post(db, asB, undefined, 'GET');
+  const lines = db.tables.defense_restore_audit.filter(r => r.outcome === 'trace').map(r => r.reason);
+  assert.deepEqual(lines, ['m=POST;s=400;a=bearer;k=id,contentSha256', 'm=POST;s=401;a=none;k=noteId', 'm=GET;s=405;a=bearer;k=none']);
+  assert.ok(db.tables.defense_restore_audit.every(r => !JSON.stringify(r).includes(B) && !JSON.stringify(r).includes(SECRET_TEXT)));
 }));

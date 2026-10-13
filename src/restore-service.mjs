@@ -62,7 +62,7 @@ async function audit(deps, actor, noteId, outcome, reason) {
   } catch { return false; }
 }
 
-export async function handleRestore(request, response, deps = {}) {
+async function restoreInner(request, response, deps) {
   if (request.method !== 'POST') { response.setHeader('Allow', 'POST'); return fail(response, 405, 'METHOD_NOT_ALLOWED'); }
   const who = await requireLogin(request, response, deps);
   if (!who) return undefined;
@@ -125,5 +125,34 @@ export async function handleRestore(request, response, deps = {}) {
     console.error('restore_request_failed');
     await audit(deps, caller, wanted.id, 'failed', 'upstream_error');
     return fail(response, 502, 'RESTORE_UPSTREAM_ERROR');
+  }
+}
+
+// 요청 흔적: 어떤 요청이 몇 번 응답을 받았는지만 감사 표에 한 줄 남깁니다(outcome 'trace').
+// 담는 값은 메서드·응답 상태·인증 방식·본문 키 이름뿐이며, 값·토큰·메모 내용·사용자 ID는 담지 않습니다. 서버 한 개당 100줄까지만 남깁니다.
+const TRACE_LIMIT = 100;
+let traced = 0;
+function traceLine(request, status) {
+  const headers = request.headers ?? {};
+  const auth = typeof headers.authorization === 'string' ? (/^Bearer /iu.test(headers.authorization) ? 'bearer' : 'other')
+    : (typeof headers.cookie === 'string' && headers.cookie ? 'cookie' : 'none');
+  let body = request.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = undefined; } }
+  const keys = body && typeof body === 'object' && !Array.isArray(body)
+    ? Object.keys(body).filter(key => /^[A-Za-z0-9_]{1,24}$/u.test(key)).slice(0, 8).join(',') : (body === undefined ? 'none' : 'nonobject');
+  const method = typeof request.method === 'string' ? request.method.replace(/[^A-Z]/gu, '').slice(0, 8) : '';
+  return `m=${method};s=${status ?? 'none'};a=${auth};k=${keys}`;
+}
+
+export async function handleRestore(request, response, deps = {}) {
+  let status = null;
+  const spy = { setHeader: (...args) => response.setHeader(...args), status: code => { status = code; return response.status(code); } };
+  try {
+    return await restoreInner(request, spy, deps);
+  } finally {
+    if (traced < TRACE_LIMIT) {
+      traced += 1;
+      await audit(deps, null, null, 'trace', traceLine(request, status));
+    }
   }
 }
