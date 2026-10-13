@@ -35,8 +35,8 @@ test('응답을 보내기 전에 결과를 먼저 기록하고, 메서드·경�
   assert.equal(h.out.status, 403);
   assert.deepEqual(h.out.body, { error: 'FORBIDDEN', secret: '메모 본문' });        // 응답은 그대로
   assert.equal(h.out.headers.get('x-request-id'), REQ_ID);
-  assert.deepEqual(h.rows, [{ request_id: REQ_ID, method: 'GET', route: 'notes/:id', status: 403, reason: 'owner_mismatch', auth: 'bearer', actor: null, attack_id: null, hdrs: null }]);
-  assert.ok(!JSON.stringify(h.rows).match(/Bearer|제목|본문|a\.b\.c|\?x=1/u));       // 토큰·본문·쿼리·실제 경로의 ID가 없음
+  assert.deepEqual(h.rows, [{ request_id: REQ_ID, method: 'GET', route: 'notes/:id', status: 403, reason: 'owner_mismatch', auth: 'bearer', actor: null, attack_id: null, hdrs: null, ua: null, qs: 'x=1' }]);
+  assert.ok(!JSON.stringify(h.rows).match(/Bearer|제목|본문|a\.b\.c|\?x=1/u));       // 토큰·본문·실제 경로의 ID가 없음(쿼리는 관찰용으로 qs에만, '?' 없이)
 }));
 
 test('이유는 X-Deny-Reason이 없으면 오류 문구를 소문자로 쓰고, 모양이 맞지 않으면 남기지 않는다', () => withEnv(async () => {
@@ -105,5 +105,15 @@ test('새 열이 아직 없는 DB가 거부해도 그 열 없이 한 번 더 써
   const response = { setHeader: (k, v) => out.headers.set(k.toLowerCase(), v), status: () => ({ json: () => {} }) };
   await withOpsLog('notes', (request, res) => res.status(200).json([]), { fetch })({ method: 'GET', headers: { 'x-attack-id': 'a' } }, response);
   assert.equal(rows.length, 1);
+  assert.ok(!('ua' in rows[0]) && !('qs' in rows[0]));
   assert.deepEqual(Object.keys(rows[0]).sort(), ['actor', 'auth', 'method', 'reason', 'request_id', 'route', 'status']);
+}));
+
+test('User-Agent와 쿼리 문자열은 출력 가능한 ASCII 160자까지만 남기고, 쿠키·토큰은 읽지 않는다', () => withEnv(async () => {
+  const h = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
+  await h.run({ method: 'GET', url: '/api/notes?attack=anonymous_api_notes_read&x=한글', headers: { 'user-agent': `aleph-judge/1.0 ${'a'.repeat(300)}`, cookie: 'sb-access=SECRETCOOKIE', authorization: 'Bearer SECRETTOKEN' } });
+  assert.equal(h.rows[0].qs, 'attack=anonymous_api_notes_read&x=??');
+  assert.equal(h.rows[0].ua.length, 160);
+  assert.ok(h.rows[0].ua.startsWith('aleph-judge/1.0 '));
+  assert.ok(!JSON.stringify(h.rows).match(/SECRETCOOKIE|SECRETTOKEN/u));
 }));

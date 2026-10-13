@@ -17,6 +17,10 @@ const COMMON_HEADERS = new Set(['host', 'connection', 'user-agent', 'accept', 'a
   'authorization', 'cookie', 'origin', 'referer', 'cache-control', 'pragma', 'upgrade-insecure-requests', 'forwarded', 'via', 'x-request-id', 'x-attack-id',
   'x-real-ip', 'priority', 'dnt', 'te', 'if-none-match', 'if-modified-since', 'range', 'traceparent', 'tracestate']);
 const isCommon = name => COMMON_HEADERS.has(name) || /^(sec-|x-forwarded-|x-vercel-|x-amzn-|cf-)/u.test(name);
+// 점검 도구가 점검 이름을 User-Agent나 쿼리로 붙이는지 확인하려는 임시 관찰 값입니다(출력 가능한 ASCII 160자까지). 쿠키·토큰 헤더는 읽지 않습니다.
+const printable = value => (typeof value === 'string' && value ? value.replace(/[^ -~]/gu, '?').slice(0, 160) : null);
+export const uaOf = request => printable(request.headers?.['user-agent']);
+export const qsOf = request => { const url = typeof request.url === 'string' ? request.url : ''; const at = url.indexOf('?'); return at < 0 ? null : printable(url.slice(at + 1)); };
 export function attackIdOf(request) {
   const value = request.headers?.['x-attack-id'];
   return typeof value === 'string' && ATTACK_ID.test(value) ? value : null;
@@ -58,8 +62,8 @@ async function post(row, deps) {
 // 점검 이름·헤더 이름 열(attack_id, hdrs)이 아직 없는 DB에서도 기록이 끊기지 않도록, 실패하면 그 열 없이 한 번 더 씁니다.
 async function insert(row, deps) {
   if (await post(row, deps)) return true;
-  const { attack_id: dropA, hdrs: dropH, ...basic } = row;
-  return (dropA !== undefined || dropH !== undefined) ? post(basic, deps) : false;
+  const { attack_id: a, hdrs: h, ua, qs, ...basic } = row;
+  return (a !== undefined || h !== undefined || ua !== undefined || qs !== undefined) ? post(basic, deps) : false;
 }
 
 // route: 'notes', 'notes/:id', 'notices', 'notices/:id', 'restore', 'device' 처럼 고정된 이름만 씁니다(실제 경로의 ID는 남기지 않음).
@@ -75,7 +79,7 @@ export function withOpsLog(route, handler, deps = {}) {
       done = true;
       try {
         await insert({ request_id: requestId, method, route, status, reason: reasonOf(denyReason, body), auth: authKind(request),
-          actor: request.opsActor ? actorOf(request.opsActor) : null, attack_id: attackIdOf(request), hdrs: extraHeaderNames(request) }, deps);
+          actor: request.opsActor ? actorOf(request.opsActor) : null, attack_id: attackIdOf(request), hdrs: extraHeaderNames(request), ua: uaOf(request), qs: qsOf(request) }, deps);
       } catch { /* 기록 실패는 응답에 영향을 주지 않습니다. */ }
     };
     const proxy = new Proxy(response, {
