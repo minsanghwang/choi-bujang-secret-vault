@@ -1,6 +1,42 @@
 # BYTE BACK 방어전 시작 틀 R5
 
-## 현재 상태: 9단계 「도플갱어를 찾고 권한을 거둡니다」
+## 현재 상태: 10단계 「백업에서 자료실을 되살립니다」
+
+**10단계에서 더한 기능**
+
+- **정책 사본 차이 보기**: `npm run policy:diff`는 침해 전에 검증한 안전 정책 사본(`policy/verified/policy-v1.json`, 해시 목록 `policy/verified/MANIFEST.json`)과 현재 시험 정책(`policy/test-policy.json`)의 차이만 보여 줍니다. 사본이 없거나 해시 목록과 다르거나 형식이 틀리면 중단하고 아무것도 쓰지 않습니다. 사본 해시(SHA-256)는 `364f5a32af39e6d2a8b3730cc5a2aef0d206fafe3c0fb8e4068c8902b29aaf0f`입니다. 출력의 앞 12자와 이 값이 같은지 확인하세요.
+- **정책 되돌리기**: `npm run policy:restore`는 복원할 버전·해시·바뀔 항목을 보여 주기만 하고, `npm run policy:restore -- --apply --confirm <해시 앞 12자>`일 때만 대상 서비스(`notes`) 하나를 사본으로 바꿉니다. 다른 서비스 규칙은 사본과 달라도 그대로 두고, 감사 이력(`audit`)은 지우지 않고 한 줄을 더합니다. 실제 운영 정책(`src/decider.mjs`, 반 엔진 설정)은 읽지도 바꾸지도 않는 시험용 사본입니다.
+- **메모 한 건 복원 경로**: 서비스 `notes`, 경로 `POST /api/restore`(`api/restore.js`, `src/restore-service.mjs`), `aleph.config.json`의 `restoreRoute`에 같은 값을 적었습니다. 본문은 `{ "id": "<메모 UUID>", "ownerId": "<주인 UUID>", "contentSha256": "<내용 해시 64자>", "dryRun": true|false }`뿐이고 다른 값(`role`, 내용 등)은 400입니다. 서버는 비공개 사본 표 `defense_notes_backup`에서 그 한 건을 읽어 ID·소유자·내용 해시가 요청과 같은지, 저장된 해시가 내용에서 다시 계산한 값과 같은지 대조하고, 하나라도 다르면 쓰지 않습니다(404/409). 부르는 사람은 검증된 로그인 사용자이며 사본의 주인 본인이거나 `INSTRUCTOR_USER_IDS`에 있는 강사여야 합니다(아니면 사본을 읽기 전에 `403 not_owner`). 지금 자료실에 같은 번호가 있으면 개인 메모 구역이고 소유자가 같을 때만 제목·내용을 사본 값으로 바꾸고, 없으면 사본의 ID·소유자·위치로 한 건을 만듭니다. 다른 메모와 공지는 읽지도 쓰지도 지우지도 않습니다. `dryRun: true`는 쓰지 않고 대상과 현재 상태(`liveExists`, `liveMatchesCopy`)만 돌려줍니다. 응답에는 메모 제목·내용이 없습니다.
+- **감사 기록**: 쓰기 전에 `defense_restore_audit`에 `started`를 남기고(못 남기면 쓰지 않고 503), 끝나면 `restored`/`failed`를 더합니다. 이 표는 덧붙이기만 되고 서버 키로도 고치거나 지울 수 없게 DB 트리거로 막았습니다(SQL을 적용한 뒤).
+- **내용 해시 규칙**: `sha256(UTF-8(title) + 0x00 + UTF-8(content))` 소문자 16진수. SQL과 서버가 같은 규칙을 씁니다.
+
+**10단계 실행 순서 (SQL은 직접 검토하고 실행합니다)**
+
+1. `supabase/step10-backup.sql`을 ①→②→③→④ 블록으로 나눠 하나씩 Run 합니다. ③이 지금의 개인 메모를 사전 백업으로 복사하고, ④가 사본을 다시 읽어 `ok_rows`가 `total`과 같은지, 두 표의 `anon`/`authenticated` 권한이 모두 `false`인지 보여 줍니다. 침해 **전**의 정상 상태에서 실행해야 의미가 있습니다.
+2. 복원 대상의 `id`·`ownerId`·`contentSha256`은 시험 계정 B의 메모에 대해 SQL Editor에서 `select note_id, owner_id, content_sha256 from public.defense_notes_backup where owner_id = '<B의 사용자 UUID>';`로 확인합니다(메모 본문은 보지 않아도 됩니다).
+3. 먼저 `dryRun: true`로 호출해 대상과 `liveMatchesCopy`를 확인한 뒤, `dryRun`을 빼고 호출합니다. 호출 예(로그인 쿠키가 있는 브라우저 콘솔): `fetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:'<UUID>', ownerId:'<B UUID>', contentSha256:'<해시>', dryRun:true})}).then(r => r.json()).then(console.log)`
+   - 정상: B 계정으로 로그인한 상태에서 B의 메모만 `200`, 응답의 세 값이 요청과 같습니다.
+   - 거부: A 계정으로 B의 메모를 요청하면 `403 not_owner`, 해시를 바꾸면 `404`, 로그인이 없으면 `401`.
+4. 시험: `npm run test:restore`(복원 14건·정책 5건, 가짜 DB·임시 폴더). 실제 DB·배포·심판 판정을 증명하지 않습니다.
+
+**복구 뒤 1~9단계 재확인 순서 (모두 아직 실행하지 않았습니다 = 미실행)**
+
+복구 직후 아래 순서로 확인하고, 실제로 실행한 것만 결과를 적습니다.
+
+| 순서 | 확인 | 정상(허용) | 금지(거부) | 상태 |
+|---|---|---|---|---|
+| 1 | `npm run policy:diff` | 차이 없음 | 사본 없음·해시 불일치면 중단 | 로컬 실행함(차이 없음) |
+| 2 | 로컬 시험 모음(`test:decider`, `test:step2`, `test:r5`, `test:package`, `test:detect`, `test:restore`, `decider:test`, `detect:test`) | 전부 통과 | — | 로컬 실행함 |
+| 3 | 1~3단계: 첫 화면·`/data.json` | 화면이 뜸 | `/data.json`에 메모 없음 | **미실행**(배포 대상) |
+| 4 | 3~4단계: A 로그인 후 자기 메모 읽기·추가·수정·삭제 | `200`·`201` | 로그인 없는 `/api/notes`는 `401`, 가짜 토큰 `401` | **미실행** |
+| 5 | 4단계: B가 A의 메모 번호를 `GET`·`PUT`·`DELETE` | — | 모두 `403`(`X-Deny-Reason: owner_mismatch`) | **미실행** |
+| 6 | 5단계: 공개 키로 원본 API 직접 요청 | — | `401`/`403`/빈 목록 | **미실행**(`step5-revoke-direct.sql` 적용 여부도 미확인) |
+| 7 | 6~7단계: 미등록 기기·이상 접속 요청 | 정상 요청 허용 | `device_not_registered` 거부, 복합 이상은 `step_up` | **미실행**(심판이 보냄, 로컬은 `decider:test`만) |
+| 8 | 8단계: 공지 목록·일반 학생의 공지 수정 | 공지 목록 `200` | 공지 수정 `403 instructor_required` | **미실행**(복구 뒤 재확인 전) |
+| 9 | 9단계: 정상 기기·폭주 조회 사건 | 정상은 `observe` | 10분 120건 초과는 `propose_revocation` | **미실행**(심판이 보냄, 로컬은 `detect:test`만) |
+| 10 | 10단계: B의 메모 한 건 복원 | `200`, 세 값 일치 | A의 요청 `403`, 해시 불일치 `404`/`409` | **미실행**(SQL 적용 전) |
+
+복구 뒤에 "자료와 정책이 돌아왔다"는 말은 3~10을 직접 실행해 결과를 적은 뒤에만 합니다.
 
 **9단계에서 더한 기능**
 
@@ -15,7 +51,7 @@
 - 새 주소 `/api/notices`(`api/notices.js`, `GET` 공지 목록, 로그인한 사용자 모두)와 `/api/notices/:id`(`api/notices/[id].js`): `GET` 읽기, `PUT` 수정(강사만)만 있고 추가·삭제는 없습니다(405). 구역 열이 없는 DB에서는 공지 목록이 빈 배열입니다. 공지는 제목·내용만 바꾸며 소유자와 구역은 바뀌지 않습니다.
 - 자료 API의 최종 확인: 검증된 사용자 ID(`src/verify-login.mjs`)와 DB에 **저장된** 행의 구역·`owner_id`, 서버 환경변수 `INSTRUCTOR_USER_IDS`(강사 사용자 UUID를 쉼표로 구분, 비어 있으면 강사 없음)만 비교합니다. 화면 메뉴와 요청 본문·헤더의 `role`·`owner_id`·`zone`은 읽지 않습니다. 개인 메모 주소로 공지를, 공지 주소로 개인 메모를 요청하면 강사여도 `403 wrong_zone`입니다.
 - 판정기 `src/decider.mjs`(`RULE_IDS`: `device_registered`, `zone_access`, `step_up_required`)에 구역 규칙 `zone_access`가 있습니다. 엔진이 확인한 `service`·`method`·`path`·`route`가 구역 표의 한 줄과 정확히 맞을 때만 통과합니다. 표는 프롬프트가 요구한 세 규칙, 즉 자기 메모 읽기(`GET /notes/:id`)·수정(`PUT /notes/:id`)과 강사 공지 수정(`PUT /notices/:id`, 허용하지 않음)뿐이며, 메모 목록·추가·삭제도 판정기 표에는 없습니다(자료 API는 그대로 처리합니다). 그 밖에 표에 없는 경로·메서드와 `route`의 불일치·쿼리가 붙은 요청(`queryLength` ≠ 0)·`:id` 자리의 `export` 같은 기능 이름·더 깊은 경로는 `deny`와 `zone_not_allowed`입니다. 자료는 쿼리가 아니라 경로의 ID 한 칸으로만 고르고, 그 ID는 UUID이거나 7단계 엔진 예시의 `demo`(자기 메모의 정상 요청)일 때만 인정하고, 그 밖의 이름(`other-1`, `learner_…`, `notice…` 등)은 모두 `deny`·`zone_not_allowed`입니다. 요청 계약에 소유자 값이 없어서, 판정기는 허용한 메모 경로를 처음 쓴 사용자(`subjectId`)를 소유 기록(프로세스 메모리, 최대 5000건)에 남기고 같은 경로를 다른 사용자가 요청하면 `deny`·`zone_not_allowed`로 거부합니다. 먼저 접근한 쪽이 주인이 되는 방식이고 서버가 다시 뜨면 기록이 사라지므로 최종 소유자 확인은 자료 API가 합니다. 공지 읽기·수정(`GET·PUT /notices/:id`)은 요청 계약에 강사 역할 값이 없어 판정기가 허용하지 않습니다(공지 읽기는 자료 API가 로그인한 사용자에게 허용하지만 판정기 표에는 없습니다). 6단계 기기 규칙과 7단계 추가 확인 규칙은 그대로이고 순서는 기기 → 구역 → 추가 확인입니다.
-- `aleph.config.json`: `step` 9. `allowedRoutes`는 구현한 메서드와 경로를 `GET /api/notes`처럼 한 줄씩 적습니다(`GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`, `GET /api/notices`, `GET·PUT /api/notices/:id`). 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)과 9단계 탐지·회수(`doppelganger_burst_revocation`)를 미실행으로 기록합니다.
+- `aleph.config.json`: `step` 10, `restoreRoute` `POST /api/restore`. `allowedRoutes`는 구현한 메서드와 경로를 `GET /api/notes`처럼 한 줄씩 적습니다(`GET·POST /api/notes`, `GET·PUT·DELETE /api/notes/:id`, `GET /api/notices`, `GET·PUT /api/notices/:id`). 자기 점검에 구역 간 직접 요청(`cross_zone_direct_api`)과 9단계 탐지·회수(`doppelganger_burst_revocation`)를 미실행으로 기록합니다.
 
 **다시 실행하는 방법 (SQL은 직접 검토하고 실행합니다)**
 
@@ -25,6 +61,8 @@
 4. 직접 API 확인(예시, 로그인 후 쿠키 사용 또는 `Authorization` 헤더): B 계정으로 A 메모 번호를 `GET /api/notes/<번호>` 하면 `403`이고 자료가 없어야 합니다. 일반 학생이 `PUT /api/notices/<번호>` 하면 `403`(`X-Deny-Reason: instructor_required`)이어야 합니다. 본인 메모 읽기·수정은 그대로 `200`입니다.
 
 ### 이 단계에 남은 약점
+
+- 10단계: 복원 경로는 사본 주인 본인도 부를 수 있어서, 계정 자체가 침해되면 그 계정이 자기 메모를 사본 값으로 되돌리는 것은 막지 못합니다(다른 사람의 메모는 못 건드립니다). 사본은 같은 Supabase 프로젝트의 비공개 표라서, DB 전체가 침해되면 사본도 함께 바뀔 수 있습니다. 정책 사본의 해시는 저장소 안의 목록과 README에 있어서 저장소를 쓸 수 있는 사람은 둘 다 바꿀 수 있고, `policy/test-policy.json`은 실제 운영 정책이 아니라 시험용 사본입니다. `POST /api/restore`는 판정기 구역 표에 없어서(기본 거부) 엔진을 거치는 경로로 허용되려면 운영 측 허용 규칙이 별도로 필요하고, `restoreRoute`의 표기 형식은 운영 계약으로 확인하지 못했습니다. `step10-backup.sql`의 적용과 실제 복원은 이 저장소가 확인하지 않았습니다.
 
 - 9단계 탐지는 `docs/DETECT_EVENTS.md`의 사건 세 값(`at`, `method`, `identity.sub`)만 봅니다. 사건에 네트워크·기기 값이 없어서 "평소와 다른 네트워크"는 판단하지 않고, 회수 대상도 기기가 아니라 `subject` 하나입니다. 120건 이하로 천천히 읽거나 여러 계정으로 나눠 읽는 도플갱어는 지나갑니다. 운영 엔진이 사건을 전달하고 회수 제안을 집행하는 경로는 이 저장소에서 연결·확인하지 않았습니다.
 

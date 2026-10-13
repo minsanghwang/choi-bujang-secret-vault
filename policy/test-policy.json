@@ -1,0 +1,45 @@
+{
+  "schema": "aleph.policy.v1",
+  "services": {
+    "notes": {
+      "ruleIds": [
+        "device_registered",
+        "zone_access",
+        "step_up_required"
+      ],
+      "zoneRoutes": {
+        "GET /notes/:id": "allow",
+        "PUT /notes/:id": "allow",
+        "PUT /notices/:id": "deny"
+      },
+      "noteIdFormat": "uuid_or_demo",
+      "stepUp": {
+        "oddHours": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "burstWindowSeconds": 600,
+        "burstCount": 10,
+        "maxReauthAgeSeconds": 900
+      },
+      "detect": {
+        "windowSeconds": 600,
+        "burstLimit": 120,
+        "reasonCode": "burst_read"
+      }
+    },
+    "notices": {
+      "read": "logged_in_user",
+      "write": "instructor_only"
+    },
+    "auth": {
+      "loginRequired": true,
+      "cookieWriteSameSiteCheck": true
+    }
+  },
+  "audit": []
+}

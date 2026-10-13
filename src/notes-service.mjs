@@ -51,7 +51,7 @@ async function rest(method, query, payload, deps) {
 const view = row => ({ id: String(row.id), title: String(row.title), body: String(row.content) });
 
 // 로그인 확인. 실패하면 응답을 이미 보냈고 null을 돌려줍니다. 자료는 한 글자도 읽지 않습니다.
-async function requireLogin(request, response, deps) {
+export async function requireLogin(request, response, deps) {
   let verify;
   try {
     verify = (deps.verify ?? defaultVerifier());

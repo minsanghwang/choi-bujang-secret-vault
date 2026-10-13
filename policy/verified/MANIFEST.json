@@ -1,0 +1,9 @@
+{
+  "schema": "aleph.policy.manifest.v1",
+  "files": {
+    "policy-v1.json": {
+      "version": "v1",
+      "sha256": "364f5a32af39e6d2a8b3730cc5a2aef0d206fafe3c0fb8e4068c8902b29aaf0f"
+    }
+  }
+}

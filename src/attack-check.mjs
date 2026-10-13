@@ -36,7 +36,7 @@ function forgedToken(identityProvider) {
 }
 
 export async function runAttackChecks(config) {
-  if (![5, 6, 7, 8, 9].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (![5, 6, 7, 8, 9, 10].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
@@ -100,5 +100,12 @@ export async function runAttackChecks(config) {
     ...(config.step >= 9 ? [{ attackId: 'doppelganger_burst_revocation',
       expected: '같은 사용자의 조회가 10분 안에 120건을 넘는 복합 의심 사건만 propose_revocation(burst_read)을 내고, 정상 기기는 유지됨',
       observed: '미실행: 이 사건은 심판이 보내며, 학생 점검은 npm run detect:test의 가상 사건 연습만 함. 실제 사건 전달·접속 회수·걸린 시간은 엔진 계약 환경에서만 실측' }] : []),
+    // 10단계: 복원과 복구 뒤 재확인은 사본 표와 로그인 계정이 필요해 학생 점검이 보내지 않습니다.
+    ...(config.step >= 10 ? [{ attackId: 'restore_one_note_from_backup',
+      expected: '시험 계정 B의 메모 한 건만 비공개 사본에서 복원되고 ID·소유자·내용 해시가 사본과 같음, 다른 메모와 감사 기록은 그대로',
+      observed: '미실행: 이 점검은 B 로그인 계정과 사본 SQL 적용 없이 실행되어 POST /api/restore를 보내지 않음. 로컬 시험은 가짜 DB로만 확인함' },
+    { attackId: 'post_restore_regression',
+      expected: '복구 뒤 1~9단계의 정상 요청은 허용되고 B의 A 자료 요청 같은 금지 요청은 다시 거부됨',
+      observed: '미실행: README의 복구 뒤 재확인 순서를 아직 실행하지 않음' }] : []),
   ];
 }
