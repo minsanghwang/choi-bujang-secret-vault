@@ -83,7 +83,9 @@ test('내 자료실 메모 경로(UUID)는 허용하고, 정확한 경로가 아
     withRoute('GET', 'GET /notes', '/notes'), withRoute('POST', 'POST /notes', '/notes'),   // 목록·추가는 표에 없음
     withRoute('DELETE', 'DELETE /notes/:id', `/notes/${U1}`),                              // 삭제도 표에 없음
     withRoute('GET', 'GET /notices/:id', `/notices/${U1}`),         // 공지 읽기는 판정기가 열지 않음
-    withRoute('GET', 'GET /notes/:id', '/notes/demo'),              // 7단계 연습 ID는 8단계에서 UUID가 아니므로 거부
+    withRoute('GET', 'GET /notes/:id', '/notes/other-1'),           // UUID도 demo도 아닌 이름은 거부
+    withRoute('GET', 'GET /notes/:id', '/notes/Demo'),
+    withRoute('GET', 'GET /notes/:id', '/notes/demo2'),
     withRoute('GET', 'GET /notes/:id', '/notes/abc'),
     withRoute('PUT', 'PUT /notes/:id', '/notes/notice-1'),
     withRoute('GET', 'GET /notes/:id', '/notes/export'),            // 기능 이름은 자료 ID 자리에 못 옴
@@ -105,6 +107,14 @@ test('내 자료실 메모 경로(UUID)는 허용하고, 정확한 경로가 아
     assert.equal(res.reasonCode, 'zone_not_allowed');
     assert.deepEqual(res.ruleIds, ['zone_access']);
   }
+});
+
+test('7단계 엔진 예시 /notes/demo의 자기 메모 정상 읽기는 허용한다', async () => {
+  const res = await decide(withRoute('GET', 'GET /notes/:id', '/notes/demo', { subjectId: 'learner_fixture' }));
+  assert.equal(res.decision, 'allow');
+  assert.equal(res.reasonCode, 'approved');
+  assert.equal((await decide(withRoute('PUT', 'PUT /notes/:id', '/notes/demo', { subjectId: 'learner_fixture' }))).decision, 'allow');
+  assert.equal((await decide(withRoute('GET', 'GET /notices/:id', '/notices/demo'))).decision, 'deny');   // 공지는 demo도 거부
 });
 
 test('일반 학생의 공지 수정은 판정기가 거부한다(요청 계약에 강사 역할 값이 없음)', async () => {

@@ -13,13 +13,14 @@ const MAX_REAUTH_AGE_SECONDS = 900;
 
 // 8단계 구역 표. 엔진이 확인해 넘긴 service·method·path·route가 아래 한 줄과 정확히 맞아야 합니다.
 // 규칙은 자기 메모 읽기(GET)·수정(PUT)과 강사 공지 수정(PUT, 허용하지 않음) 셋뿐이고, 표에 없는 경로·메서드(목록·추가·삭제 포함)는 모두 거부합니다.
-// 8단계부터 자료 ID는 UUID 한 칸만 인정합니다. (7단계 연습의 /notes/demo, 기능 이름, 이름표 ID는 모두 거부)
+// 자료 ID는 경로 한 칸이고, UUID이거나 엔진 예시의 `demo`일 때만 인정합니다. (기능 이름·이름표 ID·그 밖의 이름은 모두 거부)
 //   note   = 내 자료실 메모(소유자 확인은 자료 API가 최종으로 합니다. 판정기는 소유자 값이 없어 아래 소유 기록만 씁니다)
 //   notice = 강사 공지. 요청 계약에 강사 역할 값이 없으므로 이 판정기는 공지 읽기·수정을 모두 허용하지 않습니다(표에 읽기 줄이 없음).
-const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const UUID_SEGMENT = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+const NOTE_ID = `(?:${UUID_SEGMENT}|demo)`;   // 7단계 엔진 예시 /notes/demo는 자기 메모의 정상 요청입니다.
 const ZONE_ROUTES = Object.freeze({
-  'GET /notes/:id': { pattern: new RegExp(`^/notes/(${UUID_SEGMENT})$`, 'iu'), allow: true },
-  'PUT /notes/:id': { pattern: new RegExp(`^/notes/(${UUID_SEGMENT})$`, 'iu'), allow: true },
+  'GET /notes/:id': { pattern: new RegExp(`^/notes/(${NOTE_ID})$`, 'u'), allow: true },
+  'PUT /notes/:id': { pattern: new RegExp(`^/notes/(${NOTE_ID})$`, 'u'), allow: true },
   'PUT /notices/:id': { pattern: new RegExp(`^/notices/(${UUID_SEGMENT})$`, 'iu'), allow: false },
 });
 
@@ -27,7 +28,7 @@ function zoneAllowed(request) {
   if (typeof request?.subjectId !== 'string' || !request.subjectId) return false;
   if (typeof request.route !== 'string' || typeof request.method !== 'string' || !Object.hasOwn(ZONE_ROUTES, request.route)) return false;
   const entry = ZONE_ROUTES[request.route];
-  // route는 표의 한 줄과 같아야 하고, 그 줄의 메서드가 요청 method와 같고, path가 그 줄의 모양(UUID 한 칸)과 맞아야 합니다.
+  // route는 표의 한 줄과 같아야 하고, 그 줄의 메서드가 요청 method와 같고, path가 그 줄의 모양(UUID 또는 demo 한 칸)과 맞아야 합니다.
   if (request.service !== 'notes' || !request.route.startsWith(`${request.method} `)) return false;
   if (typeof request.path !== 'string' || !entry.pattern.test(request.path)) return false;
   if (request.queryLength !== 0) return false;
