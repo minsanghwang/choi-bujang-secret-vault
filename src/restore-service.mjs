@@ -145,14 +145,18 @@ function traceLine(request, status) {
 }
 
 export async function handleRestore(request, response, deps = {}) {
-  let status = null;
-  const spy = { setHeader: (...args) => response.setHeader(...args), status: code => { status = code; return response.status(code); } };
+  // 응답을 바로 보내지 않고 붙잡아 둡니다. 서버 함수는 응답을 보낸 뒤 멈출 수 있어서, 흔적을 먼저 쓰고 나서 응답합니다.
+  let held = null;
+  const spy = { setHeader: (...args) => response.setHeader(...args), status: code => ({ json: body => { held = { code, body }; } }) };
   try {
-    return await restoreInner(request, spy, deps);
-  } finally {
-    if (traced < TRACE_LIMIT) {
-      traced += 1;
-      await audit(deps, null, null, 'trace', traceLine(request, status));
-    }
+    await restoreInner(request, spy, deps);
+  } catch {
+    console.error('restore_unhandled');
+    held = { code: 500, body: { error: 'RESTORE_FAILED' } };
   }
+  if (traced < TRACE_LIMIT) {
+    traced += 1;
+    await audit(deps, null, null, 'trace', traceLine(request, held?.code ?? null));
+  }
+  if (held) response.status(held.code).json(held.body);
 }

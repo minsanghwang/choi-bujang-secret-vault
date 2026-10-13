@@ -227,3 +227,13 @@ test('모든 요청은 값 없이 한 줄의 흔적(메서드·상태·인증 �
   assert.deepEqual(lines, ['m=POST;s=400;a=bearer;k=id,contentSha256', 'm=POST;s=401;a=none;k=noteId', 'm=GET;s=405;a=bearer;k=none']);
   assert.ok(db.tables.defense_restore_audit.every(r => !JSON.stringify(r).includes(B) && !JSON.stringify(r).includes(SECRET_TEXT)));
 }));
+
+test('흔적은 응답을 보내기 전에 먼저 쓴다(응답 뒤에는 서버 함수가 멈출 수 있음)', () => withEnv({}, async () => {
+  const db = world();
+  const order = [];
+  const inner = db.fetch;
+  db.fetch = async (url, init) => { if (init.method === 'POST' && String(url).includes('defense_restore_audit') && JSON.parse(init.body).outcome === 'trace') order.push('trace'); return inner(url, init); };
+  const response = { setHeader() {}, status: () => ({ json: () => order.push('response') }) };
+  await handleRestore({ method: 'POST', headers: { authorization: 'Bearer b.b.b' }, body: { id: B_NOTE } }, response, { verify, fetch: db.fetch });
+  assert.deepEqual(order.slice(-2), ['trace', 'response']);
+}));
