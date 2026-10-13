@@ -72,13 +72,15 @@ test('미등록 기기는 이상 접속 여부와 상관없이 기존 규칙대�
 const withRoute = (method, route, path, extra = {}) => fresh(normal, { method, route, path, ...extra });
 
 test('내 자료실 메모 경로는 허용하고, 정확한 경로가 아니면 모두 거부한다', async () => {
-  for (const [method, route, path] of [['GET', 'GET /notes', '/notes'], ['POST', 'POST /notes', '/notes'],
+  for (const [method, route, path] of [
     ['GET', 'GET /notes/:id', '/notes/11111111-1111-4111-8111-111111111111'],
-    ['PUT', 'PUT /notes/:id', '/notes/abc'], ['DELETE', 'DELETE /notes/:id', '/notes/abc']]) {
+    ['GET', 'GET /notes/:id', '/notes/demo'], ['PUT', 'PUT /notes/:id', '/notes/abc']]) {
     assert.equal((await decide(withRoute(method, route, path))).decision, 'allow', route);
   }
   for (const request of [
     withRoute('GET', 'GET /admin', '/admin'),
+    withRoute('GET', 'GET /notes', '/notes'), withRoute('POST', 'POST /notes', '/notes'),   // 목록·추가는 표에 없음
+    withRoute('DELETE', 'DELETE /notes/:id', '/notes/abc'),                                // 삭제도 표에 없음
     withRoute('GET', 'GET /notices/:id', '/notices/abc'),           // 공지 읽기는 판정기가 열지 않음
     withRoute('GET', 'GET /notes/:id', '/notes/notice-1'),          // 공지 ID로 메모 경로
     withRoute('PUT', 'PUT /notes/:id', '/notes/announcement-3'),
@@ -121,7 +123,7 @@ test('사용자 ID가 붙은 경로는 요청한 본인 것만 허용한다', as
   assert.equal(other.decision, 'deny');
   assert.equal(other.reasonCode, 'zone_not_allowed');
   assert.deepEqual(other.ruleIds, ['zone_access']);
-  for (const method of ['PUT', 'DELETE']) {
+  for (const method of ['PUT']) {
     const route = `${method} /notes/:id`;
     assert.equal((await decide(withRoute(method, route, '/notes/learner_fixture-note1'))).decision, 'allow');
     assert.equal((await decide(withRoute(method, route, '/notes/learner_fixture-note1', { subjectId: 'student_b' }))).decision, 'deny', method);

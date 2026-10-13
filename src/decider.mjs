@@ -12,14 +12,12 @@ const BURST_COUNT = 10;                             // 위험 신호 10건 이�
 const MAX_REAUTH_AGE_SECONDS = 900;
 
 // 8단계 구역 표. 엔진이 확인해 넘긴 service·method·path·route가 아래 한 줄과 정확히 맞아야 합니다.
+// 규칙은 자기 메모 읽기(GET)·수정(PUT)과 강사 공지 수정(PUT, 허용하지 않음) 셋뿐이고, 표에 없는 경로·메서드(목록·추가·삭제 포함)는 모두 거부합니다.
 //   note   = 내 자료실 메모(소유자 확인은 자료 API가 최종으로 합니다. 판정기는 소유자 값이 없어, 경로에 사용자 ID가 있을 때만 subjectId와 대조합니다)
 //   notice = 강사 공지. 요청 계약에 강사 역할 값이 없으므로 이 판정기는 공지 읽기·수정을 모두 허용하지 않습니다(표에 읽기 줄이 없음).
 const ZONE_ROUTES = Object.freeze({
-  'GET /notes': { pattern: /^\/notes$/u, allow: true },
-  'POST /notes': { pattern: /^\/notes$/u, allow: true },
   'GET /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
   'PUT /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
-  'DELETE /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
   'PUT /notices/:id': { pattern: /^\/notices\/([^/]+)$/u, allow: false },
 });
 // 기능 이름이 자료 ID 자리에 들어오지 못하게 막습니다. (자료 ID는 쿼리가 아니라 경로 한 칸으로만 고릅니다)
