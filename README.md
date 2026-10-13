@@ -2,6 +2,22 @@
 
 ## 현재 상태: 10단계 「백업에서 자료실을 되살립니다」
 
+## 10단계 복구 경로 요약 (서비스·경로)
+
+| 항목 | 내용 |
+|---|---|
+| 서비스 | `notes` (가상 메모 자료실) |
+| 복구 경로 | `POST /api/restore` (`aleph.config.json`의 `restoreRoute`, 공개 `/aleph.json`의 `restoreRoute`와 같은 값) |
+| 구현 파일 | `api/restore.js`, `src/restore-service.mjs` |
+| 부르는 사람 | 서버가 검증한 로그인 사용자(`Authorization: Bearer <토큰>` 또는 로그인 쿠키). 사본의 주인 본인, 또는 서버에 등록된 강사(다른 사람의 메모일 때 `ownerId` 필요) |
+| 요청 본문 | `{ "id": "<메모 UUID>" }` 필수. 선택: `ownerId`, `contentSha256`(내용 해시), `dryRun`(true이면 쓰지 않고 대상만 확인). 다른 값(`role`, 내용 등)은 `400` |
+| 사본 | 비공개 표 `defense_notes_backup`(서버만 읽음). 한 건만 읽어 ID·소유자·내용 해시를 대조하고, 저장된 해시를 내용에서 다시 계산해 맞을 때만 복원합니다 |
+| 성공 | `200 { restored: true, created: false\|true, id, ownerId, contentSha256 }` (메모 제목·내용은 응답에 없음) |
+| 거부 | 로그인 없음 `401`, 형식 오류 `400`, 남의 메모 `403 not_owner`, 사본 없음·해시 다름 `404`, 사본 검증 실패 `409`(쓰지 않음), 공지 번호·소유자가 다른 자리 `403` |
+| 보존 | 대상 한 건 외의 메모는 읽지도 쓰지도 지우지도 않고, 감사 표 `defense_restore_audit`은 덧붙이기만 합니다 |
+| 해시 규칙 | `sha256(UTF-8(title) + 0x00 + UTF-8(content))` 소문자 16진수 |
+| 정책 사본 | `npm run policy:diff`(차이만 보기), `npm run policy:restore`(보여 주기, `--apply --confirm <해시 12자>`일 때만 적용). 실제 운영 정책은 건드리지 않음 |
+
 **10단계에서 더한 기능**
 
 - **정책 사본 차이 보기**: `npm run policy:diff`는 침해 전에 검증한 안전 정책 사본(`policy/verified/policy-v1.json`, 해시 목록 `policy/verified/MANIFEST.json`)과 현재 시험 정책(`policy/test-policy.json`)의 차이만 보여 줍니다. 사본이 없거나 해시 목록과 다르거나 형식이 틀리면 중단하고 아무것도 쓰지 않습니다. 사본 해시(SHA-256)는 `364f5a32af39e6d2a8b3730cc5a2aef0d206fafe3c0fb8e4068c8902b29aaf0f`입니다. 출력의 앞 12자와 이 값이 같은지 확인하세요.
