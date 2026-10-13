@@ -110,3 +110,23 @@ test('미등록 기기는 구역과 상관없이 기존 규칙으로 먼저 거�
   const res = await decide(withRoute('GET', 'GET /admin', '/admin', { deviceRegistered: false }));
   assert.equal(res.reasonCode, 'device_not_registered');
 });
+
+test('사용자 ID가 붙은 경로는 요청한 본인 것만 허용한다', async () => {
+  const own = (extra = {}) => withRoute('GET', 'GET /notes/:id', '/notes/learner_fixture-note1', extra);
+  assert.equal((await decide(own())).decision, 'allow');                                   // A의 요청, A의 메모
+  const other = await decide(own({ subjectId: 'learner_other' }));                        // B의 요청, A의 메모
+  assert.equal(other.decision, 'deny');
+  assert.equal(other.reasonCode, 'zone_not_allowed');
+  assert.deepEqual(other.ruleIds, ['zone_access']);
+  for (const method of ['PUT', 'DELETE']) {
+    const route = `${method} /notes/:id`;
+    assert.equal((await decide(withRoute(method, route, '/notes/learner_fixture-note1'))).decision, 'allow');
+    assert.equal((await decide(withRoute(method, route, '/notes/learner_fixture-note1', { subjectId: 'student_b' }))).decision, 'deny', method);
+  }
+  // 대소문자·접두어만 같은 다른 ID로 속일 수 없다.
+  assert.equal((await decide(own({ subjectId: 'LEARNER_FIXTURE' }))).decision, 'allow');
+  assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/learner_fixture2-note', { subjectId: 'learner_fixture' }))).decision, 'allow');
+  assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/student_fixture-note'))).decision, 'deny');
+  // 사용자 표시가 없는 ID(/notes/demo 같은 연습 요청)는 이 검사로 막지 않는다.
+  assert.equal((await decide(withRoute('GET', 'GET /notes/:id', '/notes/demo'))).decision, 'allow');
+});
