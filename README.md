@@ -6,18 +6,18 @@
 
 - **정책 사본 차이 보기**: `npm run policy:diff`는 침해 전에 검증한 안전 정책 사본(`policy/verified/policy-v1.json`, 해시 목록 `policy/verified/MANIFEST.json`)과 현재 시험 정책(`policy/test-policy.json`)의 차이만 보여 줍니다. 사본이 없거나 해시 목록과 다르거나 형식이 틀리면 중단하고 아무것도 쓰지 않습니다. 사본 해시(SHA-256)는 `364f5a32af39e6d2a8b3730cc5a2aef0d206fafe3c0fb8e4068c8902b29aaf0f`입니다. 출력의 앞 12자와 이 값이 같은지 확인하세요.
 - **정책 되돌리기**: `npm run policy:restore`는 복원할 버전·해시·바뀔 항목을 보여 주기만 하고, `npm run policy:restore -- --apply --confirm <해시 앞 12자>`일 때만 대상 서비스(`notes`) 하나를 사본으로 바꿉니다. 다른 서비스 규칙은 사본과 달라도 그대로 두고, 감사 이력(`audit`)은 지우지 않고 한 줄을 더합니다. 실제 운영 정책(`src/decider.mjs`, 반 엔진 설정)은 읽지도 바꾸지도 않는 시험용 사본입니다.
-- **메모 한 건 복원 경로**: 서비스 `notes`, 경로 `POST /api/restore`(`api/restore.js`, `src/restore-service.mjs`), `aleph.config.json`의 `restoreRoute`에 같은 값을 적었습니다. 본문은 `{ "id": "<메모 UUID>", "ownerId": "<주인 UUID>", "contentSha256": "<내용 해시 64자>", "dryRun": true|false }`뿐이고 다른 값(`role`, 내용 등)은 400입니다. 서버는 비공개 사본 표 `defense_notes_backup`에서 그 한 건을 읽어 ID·소유자·내용 해시가 요청과 같은지, 저장된 해시가 내용에서 다시 계산한 값과 같은지 대조하고, 하나라도 다르면 쓰지 않습니다(404/409). 부르는 사람은 검증된 로그인 사용자이며 사본의 주인 본인이거나 `INSTRUCTOR_USER_IDS`에 있는 강사여야 합니다(아니면 사본을 읽기 전에 `403 not_owner`). 지금 자료실에 같은 번호가 있으면 개인 메모 구역이고 소유자가 같을 때만 제목·내용을 사본 값으로 바꾸고, 없으면 사본의 ID·소유자·위치로 한 건을 만듭니다. 다른 메모와 공지는 읽지도 쓰지도 지우지도 않습니다. `dryRun: true`는 쓰지 않고 대상과 현재 상태(`liveExists`, `liveMatchesCopy`)만 돌려줍니다. 응답에는 메모 제목·내용이 없습니다.
+- **메모 한 건 복원 경로**: 서비스 `notes`, 경로 `POST /api/restore`(`api/restore.js`, `src/restore-service.mjs`), `aleph.config.json`의 `restoreRoute`에 같은 값을 적었습니다. 본문은 `{ "id": "<메모 UUID>", "ownerId"?: "<주인 UUID>", "contentSha256"?: "<내용 해시 64자>", "dryRun"?: true|false }`이고 `id`(또는 같은 뜻의 `noteId`)만 필수입니다. 소유자는 서버가 검증한 로그인 사용자이고, `ownerId`·`contentSha256`은 보내면 사본과 대조만 하며(다르면 쓰지 않음) 본문 값으로 권한이 생기지는 않습니다. 해시를 생략하면 그 메모의 가장 오래된(침해 전) 사본을 씁니다. 다른 값(`role`, 내용 등)은 400입니다. 서버는 비공개 사본 표 `defense_notes_backup`에서 그 소유자의 그 한 건만 읽어 ID·소유자(와 보낸 해시)가 같은지, 저장된 해시가 내용에서 다시 계산한 값과 같은지 대조하고, 하나라도 다르면 쓰지 않습니다(404/409). 다른 사람의 메모를 복원하려면 사본의 주인 본인이거나 `INSTRUCTOR_USER_IDS`의 강사가 `ownerId`를 적어야 하고, 아니면 사본을 읽기 전에 `403 not_owner`입니다. 지금 자료실에 같은 번호가 있으면 개인 메모 구역이고 소유자가 같을 때만 제목·내용을 사본 값으로 바꾸고, 없으면 사본의 ID·소유자·위치로 한 건을 만듭니다. 다른 메모와 공지는 읽지도 쓰지도 지우지도 않습니다. `dryRun: true`는 쓰지 않고 대상과 현재 상태(`liveExists`, `liveMatchesCopy`)만 돌려줍니다. 응답에는 메모 제목·내용이 없습니다.
 - **감사 기록**: 쓰기 전에 `defense_restore_audit`에 `started`를 남기고(못 남기면 쓰지 않고 503), 끝나면 `restored`/`failed`를 더합니다. 이 표는 덧붙이기만 되고 서버 키로도 고치거나 지울 수 없게 DB 트리거로 막았습니다(SQL을 적용한 뒤).
 - **내용 해시 규칙**: `sha256(UTF-8(title) + 0x00 + UTF-8(content))` 소문자 16진수. SQL과 서버가 같은 규칙을 씁니다.
 
 **10단계 실행 순서 (SQL은 직접 검토하고 실행합니다)**
 
 1. `supabase/step10-backup.sql`을 ①→②→③→④ 블록으로 나눠 하나씩 Run 합니다. ③이 지금의 개인 메모를 사전 백업으로 복사하고, ④가 사본을 다시 읽어 `ok_rows`가 `total`과 같은지, 두 표의 `anon`/`authenticated` 권한이 모두 `false`인지 보여 줍니다. 침해 **전**의 정상 상태에서 실행해야 의미가 있습니다.
-2. 복원 대상의 `id`·`ownerId`·`contentSha256`은 시험 계정 B의 메모에 대해 SQL Editor에서 `select note_id, owner_id, content_sha256 from public.defense_notes_backup where owner_id = '<B의 사용자 UUID>';`로 확인합니다(메모 본문은 보지 않아도 됩니다).
+2. 복원 대상의 `id`(필요하면 `ownerId`·`contentSha256`도)는 시험 계정 B의 메모에 대해 SQL Editor에서 `select note_id, owner_id, content_sha256 from public.defense_notes_backup where owner_id = '<B의 사용자 UUID>';`로 확인합니다(메모 본문은 보지 않아도 됩니다).
 3. 먼저 `dryRun: true`로 호출해 대상과 `liveMatchesCopy`를 확인한 뒤, `dryRun`을 빼고 호출합니다. 호출 예(로그인 쿠키가 있는 브라우저 콘솔): `fetch('/api/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:'<UUID>', ownerId:'<B UUID>', contentSha256:'<해시>', dryRun:true})}).then(r => r.json()).then(console.log)`
    - 정상: B 계정으로 로그인한 상태에서 B의 메모만 `200`, 응답의 세 값이 요청과 같습니다.
    - 거부: A 계정으로 B의 메모를 요청하면 `403 not_owner`, 해시를 바꾸면 `404`, 로그인이 없으면 `401`.
-4. 시험: `npm run test:restore`(복원 14건·정책 5건, 가짜 DB·임시 폴더). 실제 DB·배포·심판 판정을 증명하지 않습니다.
+4. 시험: `npm run test:restore`(복원 18건·정책 5건, 가짜 DB·임시 폴더). 실제 DB·배포·심판 판정을 증명하지 않습니다.
 
 **복구 뒤 1~9단계 재확인 순서 (모두 아직 실행하지 않았습니다 = 미실행)**
 

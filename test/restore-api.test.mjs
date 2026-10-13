@@ -44,9 +44,10 @@ function fakeDb({ notes, backups, failAudit = false }) {
     if (table === 'defense_restore_audit' && method !== 'POST' && method !== 'GET') return reply(500, {});
     if (table === 'defense_restore_audit' && failAudit) return reply(500, {});
     if (method === 'POST') { const row = { ...JSON.parse(init.body) }; rows.push(row); return reply(201, [row]); }
-    const match = row => [...u.searchParams].filter(([k]) => !['select', 'limit'].includes(k))
+    const match = row => [...u.searchParams].filter(([k]) => !['select', 'limit', 'order'].includes(k))
       .every(([k, v]) => String(row[k] ?? '').toLowerCase() === v.replace(/^eq\./u, '').toLowerCase());
     const hit = rows.filter(match);
+    if (u.searchParams.get('order') === 'backed_up_at.asc') hit.sort((x, y) => String(x.backed_up_at ?? '').localeCompare(String(y.backed_up_at ?? '')));
     if (method === 'PATCH') hit.forEach(r => Object.assign(r, JSON.parse(init.body)));
     if (method === 'DELETE') db.tables[table] = rows.filter(r => !hit.includes(r));
     return reply(200, hit.slice(0, Number(u.searchParams.get('limit') ?? Infinity)).map(r => ({ ...r })));
@@ -108,7 +109,7 @@ test('다른 사람(A)이 B의 메모를 복원하려 하거나 강사가 아니
   assert.deepEqual(db.tables.defense_restore_audit.map(r => r.outcome), ['denied']);
   // A가 본문에 자기를 소유자로 적고 B의 번호를 요청해도 사본의 소유자와 달라 거부된다.
   const forged = await post(db, asA, want({ ownerId: A }));
-  assert.equal(forged.status, 409);
+  assert.equal(forged.status, 404);                                              // A의 이름으로 찾으면 B의 사본은 보이지 않음
   assert.equal(db.tables.defense_notes.find(r => r.id === B_NOTE).title, '침해로 바뀐 제목');
 }));
 
@@ -135,7 +136,7 @@ test('ID·소유자·내용 해시 중 하나라도 사본과 다르면 쓰지 �
   // 사본의 소유자가 요청과 다르면 409.
   const otherOwner = world();
   otherOwner.tables.defense_notes_backup[0].owner_id = A;
-  assert.equal((await post(otherOwner, asB, want())).status, 409);
+  assert.equal((await post(otherOwner, asB, want())).status, 404);
 }));
 
 test('공지 번호나 소유자가 바뀐 자리는 덮어쓰지 않는다', () => withEnv({}, async () => {
@@ -168,4 +169,50 @@ test('감사 기록을 남기지 못하면 쓰지 않고, 감사 표에는 지�
   const ok = world();
   await post(ok, asB, want());
   assert.ok(ok.calls.filter(c => c.table === 'defense_restore_audit').every(c => c.method === 'POST'));
+}));
+
+test('id만 보내도 로그인한 본인의 메모를 복원하고, noteId도 같은 뜻으로 받는다', () => withEnv({}, async () => {
+  const db = world();
+  const res = await post(db, asB, { id: B_NOTE });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { restored: true, created: false, id: B_NOTE, ownerId: B, contentSha256: GOOD });
+  const live = db.tables.defense_notes.find(r => r.id === B_NOTE);
+  assert.equal(noteHash(live.title, live.content), GOOD);
+  const alias = world();
+  assert.equal((await post(alias, asB, { noteId: B_NOTE })).status, 200);
+  assert.equal((await post(alias, asB, { id: B_NOTE, noteId: A_NOTE })).status, 400);   // 서로 다른 번호는 거부
+}));
+
+test('id만 보낸 요청도 남의 메모는 복원하지 못하고 쓰기가 없다', () => withEnv({}, async () => {
+  const db = world();
+  const before = JSON.stringify(db.tables.defense_notes);
+  const res = await post(db, asA, { id: B_NOTE });                // A가 B의 번호만 보냄 → A의 이름으로 찾으므로 사본 없음
+  assert.equal(res.status, 404);
+  assert.equal(JSON.stringify(db.tables.defense_notes), before);
+  const asOwnerClaim = await post(db, asA, { id: B_NOTE, ownerId: B });
+  assert.equal(asOwnerClaim.status, 403);                          // 본문의 소유자 값으로 권한이 생기지 않음
+  assert.equal(JSON.stringify(db.tables.defense_notes), before);
+}));
+
+test('해시를 생략하면 그 메모의 가장 오래된(침해 전) 사본을 쓰고, 해시를 주면 그 사본만 쓴다', () => withEnv({}, async () => {
+  const later = noteHash('B 나중 제목', '나중 내용');
+  const db = world();
+  db.tables.defense_notes_backup[0].backed_up_at = '2026-10-01T00:00:00Z';
+  db.tables.defense_notes_backup.push(backupRow({ title: 'B 나중 제목', content: '나중 내용', content_sha256: later, backed_up_at: '2026-10-02T00:00:00Z' }));
+  const oldest = await post(db, asB, { id: B_NOTE });
+  assert.equal(oldest.body.contentSha256, GOOD);
+  const picked = world();
+  picked.tables.defense_notes_backup[0].backed_up_at = '2026-10-01T00:00:00Z';
+  picked.tables.defense_notes_backup.push(backupRow({ title: 'B 나중 제목', content: '나중 내용', content_sha256: later, backed_up_at: '2026-10-02T00:00:00Z' }));
+  assert.equal((await post(picked, asB, { id: B_NOTE, contentSha256: later })).body.contentSha256, later);
+}));
+
+test('사본 내용이 저장된 해시와 맞지 않으면 id만 보내도 쓰지 않는다', () => withEnv({}, async () => {
+  const db = world();
+  db.tables.defense_notes_backup[0].content = '바뀐 사본';
+  const before = JSON.stringify(db.tables.defense_notes);
+  const res = await post(db, asB, { id: B_NOTE });
+  assert.equal(res.status, 409);
+  assert.equal(res.headers.get('x-deny-reason'), 'backup_mismatch');
+  assert.equal(JSON.stringify(db.tables.defense_notes), before);
 }));
