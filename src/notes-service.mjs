@@ -4,6 +4,7 @@
 // 주인이 다르거나 비어 있으면 기본 거부합니다. URL·본문의 owner_id·userId·role은 믿지 않습니다.
 import config from '../aleph.config.json' with { type: 'json' };
 import { isSameSite, sessionAuthorization } from './auth-service.mjs';
+import { deviceApproved } from './device-gate.mjs';
 import { authorize, ZONES } from './zones.mjs';
 import { createLoginVerifier } from './verify-login.mjs';
 
@@ -51,7 +52,9 @@ async function rest(method, query, payload, deps) {
 const view = row => ({ id: String(row.id), title: String(row.title), body: String(row.content) });
 
 // 로그인 확인. 실패하면 응답을 이미 보냈고 null을 돌려줍니다. 자료는 한 글자도 읽지 않습니다.
-export async function requireLogin(request, response, deps) {
+// options.requireDevice: 브라우저 로그인(쿠키)으로 온 요청은 서버가 승인한 기기 쿠키가 있어야 통과합니다(11단계).
+// Authorization 헤더(Bearer)로 직접 오는 요청은 이 조건을 더하지 않고, 기존 로그인·소유자 확인 그대로입니다.
+export async function requireLogin(request, response, deps, options = {}) {
   let verify;
   try {
     verify = (deps.verify ?? defaultVerifier());
@@ -72,6 +75,19 @@ export async function requireLogin(request, response, deps) {
     response.setHeader('WWW-Authenticate', 'Bearer');
     fail(response, 401, 'LOGIN_REQUIRED');
     return null;
+  }
+  if (options.requireDevice && auth.fromCookie) {
+    let approved = false;
+    try { approved = await (deps.deviceApproved ?? deviceApproved)(request, who.userId.toLowerCase(), deps); } catch {
+      console.error('device_check_failed');
+      fail(response, 503, 'DEVICE_CHECK_UNAVAILABLE');      // 확인하지 못하면 승인으로 가정하지 않고 닫습니다.
+      return null;
+    }
+    if (!approved) {
+      response.setHeader('X-Deny-Reason', 'device_not_approved');
+      fail(response, 403, 'DEVICE_NOT_APPROVED');
+      return null;
+    }
   }
   return who;
 }
@@ -103,7 +119,7 @@ export async function handleCollection(request, response, deps = {}) {
     response.setHeader('Allow', 'GET, POST');
     return fail(response, 405, 'METHOD_NOT_ALLOWED');
   }
-  const who = await requireLogin(request, response, deps);
+  const who = await requireLogin(request, response, deps, { requireDevice: true });
   if (!who) return undefined;
   try {
     if (request.method === 'GET') {
@@ -151,7 +167,7 @@ async function serveItem(route, methods, request, response, deps) {
     response.setHeader('Allow', methods.join(', '));
     return fail(response, 405, 'METHOD_NOT_ALLOWED');
   }
-  const who = await requireLogin(request, response, deps);
+  const who = await requireLogin(request, response, deps, { requireDevice: true });
   if (!who) return undefined;
   const id = Array.isArray(request.query?.id) ? request.query.id[0] : request.query?.id;
   if (typeof id !== 'string' || !UUID.test(id)) return fail(response, 400, 'INVALID_ID');
@@ -219,7 +235,7 @@ export async function handleNoticeCollection(request, response, deps = {}) {
     response.setHeader('Allow', 'GET');
     return fail(response, 405, 'METHOD_NOT_ALLOWED');
   }
-  const who = await requireLogin(request, response, deps);
+  const who = await requireLogin(request, response, deps, { requireDevice: true });
   if (!who) return undefined;
   try {
     const upstream = await rest('GET', { select: 'id,title,content,zone', zone: 'eq.notice',

@@ -128,7 +128,7 @@ test('메모 API: Authorization 헤더가 있으면 그것만 쓰고, 없으면 
       await handleCollection({ query: {}, ...request }, {
         setHeader: (key, value) => out.headers.set(key.toLowerCase(), value),
         status: (code) => { out.status = code; return { json: (data) => { out.body = data; } }; },
-      }, { verify, fetch });
+      }, { verify, fetch, deviceApproved: async () => true });   // 이 시험은 쿠키 로그인 처리만 봅니다(기기 확인은 device-gate 시험에서 따로 봅니다).
       return out;
     };
     const cookie = `${ACCESS_COOKIE}=h.p.s`;

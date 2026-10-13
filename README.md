@@ -13,16 +13,17 @@
 | 상태 | `none`(요청 전) → `pending`(대기) → `approved`(승인) / `revoked`(해제). 승인·해제는 **운영 측이 DB(`defense_devices`)에서만** 바꿉니다. 화면 버튼·요청 본문·쿼리·헤더로는 승인되지 않고, 본문에 `status` 같은 값을 보내면 `400`입니다 |
 | 브라우저에 두는 것 | 서버가 준 읽을 수 없는(`HttpOnly`·`Secure`·`SameSite=Strict`) 쿠키 `__Host-aleph-dv` 하나(서버가 만든 무작위 핸들). DB에는 그 SHA-256 지문만 저장하고 핸들 원문은 응답·로그·DB 어디에도 없습니다. 기기 키·토큰·승인 상태를 `localStorage` 등에 넣지 않습니다 |
 | 승인 전 화면 | 로그인해도 승인 전(`none`·`pending`·`revoked`·확인 실패)에는 자료 영역을 숨기고 `/api/notes`를 부르지 않습니다. 서버가 `approved`라고 답한 뒤에만 기존 자료실을 엽니다 |
+| 서버의 기기 확인 | 화면만이 아니라 **서버가 직접** 확인합니다(`src/device-gate.mjs`). 브라우저 로그인(쿠키)으로 오는 `/api/notes`·`/api/notes/:id`·`/api/notices` 요청은 같은 브라우저의 기기 쿠키가 가리키는 행이 **이 사용자의 `approved`**일 때만 통과하고, 아니면 자료 표를 읽기 전에 `403 DEVICE_NOT_APPROVED`(`X-Deny-Reason: device_not_approved`)입니다. 승인 여부를 DB에서 읽지 못하면 `503`으로 닫습니다. `Authorization` 헤더(Bearer)로 직접 오는 요청은 기존 로그인·소유자 확인 그대로입니다(기기 확인을 더하지 않음) |
 | 자료실을 여는 조건 | **서버가 확인한 승인 결과뿐입니다.** 화면에서 자료실을 여는 곳은 `checkDevice` 한 곳이고, `GET /api/device`가 이번에 `approved`라고 답했을 때만 엽니다. 「승인 요청」 버튼은 `POST /api/device`로 요청만 보내고, 그 응답이 무엇이든 열지 않고 `GET`으로 서버에 다시 물어봅니다. 앱 설치 여부·서비스 워커·`beforeinstallprompt` 같은 설치 이벤트는 열림 조건에 쓰지 않습니다 |
 | 서비스 워커 | 인터넷이 끊겼을 때 오프라인 안내만 보여 줍니다. `/api/*`와 `/aleph.json`은 가로채지도 보관하지도 않습니다 |
 | SQL | `supabase/step11-devices.sql`(① 표 만들기 ② 확인, 승인·해제 문장은 주석). **실행함**: 표 `defense_devices` 생성, RLS 켜짐, `anon`·`authenticated` 권한 모두 `false`, 0행임을 DB에서 읽어 확인했습니다 |
 | 운영 측 승인 방법 | SQL Editor에서 `select id, owner_id, status, requested_at from public.defense_devices order by requested_at desc;`로 확인한 뒤 `update public.defense_devices set status = 'approved', decided_at = now() where id = '<deviceId>';` |
 | 판정기 | `src/decider.mjs`는 바꾸지 않았습니다. 계약(`docs/DECIDER_REQUEST.md`)에 기기 승인 값이 없고 `request.device.approval`을 만들어 쓰지 않습니다. `RULE_IDS`도 그대로입니다 |
-| 한계 | 이 승인 상태는 **앱 화면이 자료를 열지 말지 정하는 표시**이고, 운영 엔진의 기기 등록(`deviceRegistered`)과 판정을 대신하지 않습니다. 기존 보호 API(`/api/notes` 등)의 로그인·소유자 확인은 그대로이며 이번에 바꾸지 않았습니다. 쿠키 핸들은 기기 하드웨어에 묶인 키가 아니라서, 쿠키가 통째로 복사되면 같은 기기로 보일 수 있습니다. `/api/device`는 판정기 구역 표에 없어서(기본 거부) 엔진을 거치는 경로로 허용되려면 운영 측 규칙이 별도로 필요하며, `allowedRoutes`에는 넣지 않았습니다 |
+| 한계 | 이 승인 상태는 **앱 화면이 자료를 열지 말지 정하는 표시**이고, 운영 엔진의 기기 등록(`deviceRegistered`)과 판정을 대신하지 않습니다. 기존 보호 API의 로그인·소유자·구역 확인은 그대로이고, 거기에 **브라우저 로그인 요청에 한해** 승인된 기기 쿠키 확인을 더했습니다(Bearer 직접 호출은 바꾸지 않아서, 토큰만 가진 호출까지 기기로 막지는 못합니다. 그 부분은 운영 엔진의 기기 등록이 맡습니다). 쿠키 핸들은 기기 하드웨어에 묶인 키가 아니라서, 쿠키가 통째로 복사되면 같은 기기로 보일 수 있습니다. `/api/device`는 판정기 구역 표에 없어서(기본 거부) 엔진을 거치는 경로로 허용되려면 운영 측 규칙이 별도로 필요하며, `allowedRoutes`에는 넣지 않았습니다 |
 
 **11단계 다시 실행하는 방법**
-- 로컬 시험(배포 증명 아님): `npm run test:device`(기기 승인 API 7개 + 앱 설정·서비스 워커·가짜 화면 8개). 가짜 화면 시험은 실제 `public/index.html` 코드를 가짜 DOM으로 실행해, 승인 전(`none`·`pending`·`revoked`)과 확인 실패·모르는 값에서는 `/api/notes`를 부르지 않고 `approved`에서만 부르는지 봅니다.
-- 배포 확인(승인 요청 → 승인 → 열림은 실행함, 아래 거부 요청은 **미실행**): ① 운영 주소에서 로그인 → 「이 기기의 승인 상태」가 `아직 승인을 요청하지 않았습니다`이고 자료가 보이지 않아야 합니다. ② 「승인 요청」 → `승인 대기 중`이고 자료는 계속 없어야 합니다. ③ 운영 측이 위 `update`로 승인 → 「상태 새로 확인」 → `승인된 기기`와 기존 자료실이 열려야 합니다. 거부되어야 할 것: 비로그인 `GET /api/device`는 `401`, 본문에 `{"status":"approved"}`를 보내는 `POST /api/device`는 `400`이고 상태가 바뀌지 않습니다.
+- 로컬 시험(배포 증명 아님): `npm run test:device`(기기 승인 API 7개 + 서버 기기 확인 5개 + 앱 설정·서비스 워커·가짜 화면 10개). 가짜 화면 시험은 실제 `public/index.html` 코드를 가짜 DOM으로 실행해, 승인 전(`none`·`pending`·`revoked`)과 확인 실패·모르는 값에서는 `/api/notes`를 부르지 않고 `approved`에서만 부르는지 봅니다.
+- 배포 확인(승인 요청 → 승인 → 열림은 실행함, 아래 거부 요청은 **미실행**): ① 운영 주소에서 로그인 → 「이 기기의 승인 상태」가 `아직 승인을 요청하지 않았습니다`이고 자료가 보이지 않아야 합니다. ② 「승인 요청」 → `승인 대기 중`이고 자료는 계속 없어야 합니다. ③ 운영 측이 위 `update`로 승인 → 「상태 새로 확인」 → `승인된 기기`와 기존 자료실이 열려야 합니다. 거부되어야 할 것: 승인 전 브라우저 콘솔에서 `fetch('/api/notes')`는 `403 DEVICE_NOT_APPROVED`(자료 없음), 비로그인 `GET /api/device`는 `401`, 본문에 `{"status":"approved"}`를 보내는 `POST /api/device`는 `400`이고 상태가 바뀌지 않습니다.
 
 - 실제 실행에서 「승인 요청」을 두 번 눌러 같은 기기에 대기 행이 둘 생긴 일이 있어, 요청이 끝나기 전에는 버튼을 잠그도록 고쳤습니다(이미 생긴 대기 행 1개는 남아 있고, 한 사용자의 대기·승인 기기 상한 5대에 포함됩니다).
 

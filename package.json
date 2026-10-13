@@ -12,7 +12,7 @@
     "test:decider": "node --test test/decider.test.mjs",
     "test:detect": "node --test test/detect.test.mjs",
     "test:restore": "node --test test/policy-restore.test.mjs test/restore-api.test.mjs",
-    "test:device": "node --test test/device-api.test.mjs test/pwa-static.test.mjs",
+    "test:device": "node --test test/device-api.test.mjs test/device-gate.test.mjs test/pwa-static.test.mjs",
     "policy:diff": "node scripts/policy-diff.mjs",
     "policy:restore": "node scripts/policy-restore.mjs",
     "detect:test": "node scripts/detect-test.mjs",

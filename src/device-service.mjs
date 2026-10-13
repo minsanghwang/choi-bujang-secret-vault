@@ -5,18 +5,18 @@
 //   쿠키 값은 서버가 만든 무작위 핸들이고, DB에는 그 SHA-256 지문만 저장합니다. 핸들 원문은 응답·로그·DB 어디에도 남기지 않습니다.
 // - 이 상태는 앱 화면이 자료를 열지 말지 정하는 표시용입니다. 운영 엔진의 기기 등록(deviceRegistered)을 대신하지 않으며,
 //   판정기 계약에 기기 승인 값이 없으므로 src/decider.mjs는 이 상태를 읽지 않습니다.
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { readCookies } from './auth-service.mjs';
+import { DEVICE_COOKIE, HANDLE, sha256 } from './device-gate.mjs';
 import { requireLogin } from './notes-service.mjs';
 
+export { DEVICE_COOKIE };
+
 const TABLE = 'defense_devices';
-export const DEVICE_COOKIE = '__Host-aleph-dv';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
 const MAX_ACTIVE = 5;                                  // 한 사용자의 승인 대기·승인 기기 상한
-const HANDLE = /^[A-Za-z0-9_-]{43}$/u;                 // 무작위 32바이트(base64url)
 const STATES = new Set(['pending', 'approved', 'revoked']);
 
-const sha256 = text => createHash('sha256').update(text, 'utf8').digest('hex');
 const json = (response, status, body) => { response.setHeader('Cache-Control', 'no-store'); response.status(status).json(body); };
 const fail = (response, status, error, reason) => {
   if (reason) response.setHeader('X-Deny-Reason', reason);
