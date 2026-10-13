@@ -18,10 +18,11 @@ function appUrl(config) {
 // 서버 기록(요청 ID)과 이 결과를 같은 요청으로 대조할 수 있고, 요청을 보내지 않은 점검에는 붙일 것이 없어 미실행으로 남습니다.
 const uuid4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/gu, c => { const r = Math.floor(Math.random() * 16); return (c === 'x' ? r : (r & 3) | 8).toString(16); });
 const sentIds = {};
-const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'X-Attack-Id': attackId, 'X-Request-Id': requestId }; };
+// 헤더 이름은 소문자로 붙입니다(HTTP 헤더는 대소문자를 가리지 않지만, 기록 도구가 객체의 키를 그대로 읽는 경우를 위해).
+const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
 
 async function send(url, authorization, extraHeaders = {}, attackId = null) {
-  const response = await fetch(url, { redirect: 'error', signal: timeout(10000),
+  const response = await fetch(url, { redirect: 'error', signal: timeout(10000), ...(attackId ? { attackId } : {}),
     headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...(attackId ? tagged(attackId) : {}) } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
@@ -80,8 +81,14 @@ export async function runAttackChecks(config) {
   // 12단계: 로그인 없이 작전실 요약(/api/ops)을 부르면 거부되어야 합니다. 이 요청만 실제로 보냅니다.
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
+  // 임시 관찰(원인을 찾으면 지웁니다): 점검이 도는 환경의 fetch가 어떤 모양인지 서버 기록(쿼리)으로 확인합니다. 비밀값은 읽지 않습니다.
+  if (config.step >= 12) try {
+    const shape = `${typeof fetch}.${fetch.name}.${fetch.length}.${typeof Headers}${typeof Request}${typeof Response}${typeof process}${typeof Buffer}.${String(fetch).replace(/\s+/gu, ' ')}`;
+    await fetch(new URL(`/api/device?fx=${shape.replace(/[^A-Za-z0-9_.-]/gu, '_').slice(0, 150)}`, app), { redirect: 'error', signal: timeout(10000) });
+  } catch { /* 관찰 실패는 점검 결과에 영향을 주지 않습니다. */ }
+
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  const page = await fetch(app, { redirect: 'error', signal: timeout(10000), headers: tagged('public_key_in_screen_code') });
+  const page = await fetch(app, { redirect: 'error', signal: timeout(10000), attackId: 'public_key_in_screen_code', headers: tagged('public_key_in_screen_code') });
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
 
