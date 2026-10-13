@@ -10,9 +10,13 @@
     "jwksUrl": "https://uhbltbjjnswrhmtmtofb.supabase.co/auth/v1/.well-known/jwks.json"
   },
   "allowedRoutes": [
-    "/api/notes",
-    "/api/notes/:id",
-    "/api/notices/:id"
+    "GET /api/notes",
+    "POST /api/notes",
+    "GET /api/notes/:id",
+    "PUT /api/notes/:id",
+    "DELETE /api/notes/:id",
+    "GET /api/notices/:id",
+    "PUT /api/notices/:id"
   ],
   "originalApiUrl": "https://uhbltbjjnswrhmtmtofb.supabase.co/rest/v1/defense_notes",
   "database": {
