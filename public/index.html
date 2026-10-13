@@ -211,14 +211,16 @@
         `${q.scope ?? ''}${q.oldestSeq != null ? ` · 번호 ${q.oldestSeq}~${q.newestSeq}` : ''}`,
         `전체 ${dash(q.total)} = 허용 ${dash(q.allowed)} + 거부 ${dash(q.denied)} + 오류 ${dash(q.errors)}`,
         ...(q.byRoute ?? []).map(x => `${x.route}: ${x.total}줄 (허용 ${x.allowed}, 거부 ${x.denied}, 오류 ${x.errors})`),
+        ...(Array.isArray(q.byAttack) && q.byAttack.length ? ['점검 이름별 기록(자기 점검이 실제로 보낸 요청):',
+          ...q.byAttack.map(x => `${x.attackId}: ${x.rows}줄 · 최근 번호 ${x.latest?.seq} ${x.latest?.method} ${x.latest?.route} → ${x.latest?.status}`)] : ['점검 이름이 붙은 기록: 없음']),
         ...(q.note ? [q.note] : [])]);
       if (Array.isArray(q.records) && q.records.length) {
         const table = document.createElement('table');
         const head = table.insertRow();
-        for (const name of ['번호', '시각', '요청 ID', '메서드', '경로', '상태', '이유']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
+        for (const name of ['번호', '시각', '요청 ID', '점검 이름', '메서드', '경로', '상태', '이유']) { const th = document.createElement('th'); th.textContent = name; head.append(th); }
         for (const x of q.records) {
           const row = table.insertRow();
-          for (const value of [x.seq, x.at, x.requestId, x.method, x.route, x.status, x.reason ?? '—']) row.insertCell().textContent = String(value);
+          for (const value of [x.seq, x.at, x.requestId, x.attackId ?? '—', x.method, x.route, x.status, x.reason ?? '—']) row.insertCell().textContent = String(value);
         }
         rq.append(table);
       }

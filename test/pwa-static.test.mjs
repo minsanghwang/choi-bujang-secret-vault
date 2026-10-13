@@ -116,7 +116,8 @@ const OPS = { schema: 'aleph.ops.v1', generatedAt: '2026-10-13T00:00:00.000Z', c
   detection: { rule: { reasonCode: 'burst_read', windowMinutes: 10, limit: 120, source: '코드에서 읽음' }, observed: { label: '확인됨(서버 기록)', getRows: 3, getRowsWithUser: 2, getRowsWithoutUser: 1, users: 1, busiestWindowRows: 2 }, engineResult: { label: '미실행' } },
   revocation: { devices: { label: '확인됨(서버 기록)', pending: 1, approved: 1, revoked: 0, other: 0, total: 2 }, proposals: { label: '미실행' }, enforcement: { label: '미실행' } },
   recovery: { policy: { label: '코드에서 읽음', version: 'v1', sha256Prefix: '364f5a32af39' }, backups: { label: '확인됨(서버 기록)', rows: 5 }, restoreAudit: { label: '확인됨(서버 기록)', planned: 1, started: 0, restored: 1, denied: 0, failed: 0, trace: 0, other: 0, total: 2 } },
-  requests: { label: '확인됨(서버 기록)', scope: '기록 표 전체', note: 'x', total: 3, allowed: 2, denied: 1, errors: 0, newestSeq: 3, oldestSeq: 1, byRoute: [{ route: 'notes', total: 3, allowed: 2, denied: 1, errors: 0 }], records: [{ seq: 3, at: 't', requestId: 'abcdef12…', method: 'GET', route: 'notes', status: 200, reason: null, auth: 'cookie' }] },
+  requests: { label: '확인됨(서버 기록)', scope: '기록 표 전체', note: 'x', total: 3, allowed: 2, denied: 1, errors: 0, newestSeq: 3, oldestSeq: 1, byRoute: [{ route: 'notes', total: 3, allowed: 2, denied: 1, errors: 0 }], byAttack: [{ attackId: 'anonymous_api_notes_read', rows: 1, latest: { seq: 2, method: 'GET', route: 'notes', status: 401 } }],
+    records: [{ seq: 3, at: 't', requestId: 'abcdef12…', method: 'GET', route: 'notes', status: 200, reason: null, auth: 'cookie', attackId: null }, { seq: 2, at: 't', requestId: '12345678…', method: 'GET', route: 'notes', status: 401, reason: 'login_required', auth: 'none', attackId: 'anonymous_api_notes_read' }] },
   unrun: { attacks41: { label: '미실행', note: '41종은 심판이 실행합니다.' } } };
 
 test('작전실은 승인된 기기에서만 열리고 /api/ops 응답의 값과 라벨만 그린다', async () => {
@@ -125,6 +126,9 @@ test('작전실은 승인된 기기에서만 열리고 /api/ops 응답의 값과
   assert.deepEqual(page.calls.filter(call => call.includes('/api/ops')), ['GET /api/ops']);
   assert.ok(page.els.get('ops-body').children.length >= 6);
   assert.equal(page.els.get('ops-error').textContent, '');
+  const shown = JSON.stringify([...page.els.values()].map(el => el.textContent ?? ''), null, 0) + JSON.stringify(page.els.get('ops-body'), (k, v) => (k === 'parent' ? undefined : v));
+  assert.match(shown, /anonymous_api_notes_read: 1줄 · 최근 번호 2 GET notes → 401/u);   // 점검 이름별 기록이 화면에 나옴
+  assert.match(shown, /점검 이름/u);                                                         // 기록 표에 점검 이름 열
 });
 
 for (const state of ['none', 'pending', 'revoked']) {

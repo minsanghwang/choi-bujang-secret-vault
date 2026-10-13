@@ -36,7 +36,8 @@ async function select(table, query, deps) {
 const readOrNull = async (table, query, deps) => { try { return await select(table, query, deps); } catch { return null; } };
 
 const mask = id => `${String(id).slice(0, 8)}…`;
-const maskedRecord = row => ({ at: row.at, requestId: mask(row.request_id), method: row.method, route: row.route, status: row.status, reason: row.reason ?? null, auth: row.auth });
+// 점검 이름(attackId)은 자기 점검이 X-Attack-Id로 붙인 이름이라 가리지 않고 그대로 보여 줍니다. 점검 결과와 서버 기록을 같은 이름으로 대조하는 데 씁니다.
+const maskedRecord = row => ({ at: row.at, requestId: mask(row.request_id), method: row.method, route: row.route, status: row.status, reason: row.reason ?? null, auth: row.auth, attackId: row.attack_id ?? null });
 const classOf = status => (status >= 500 ? 'errors' : status >= 400 ? 'denied' : 'allowed');
 
 // 같은 사용자(가명)의 GET 줄이 10분 안에 가장 많았던 줄 수. 줄을 센 값이며 판정이 아닙니다.
@@ -58,6 +59,18 @@ function busiestWindow(rows) {
 // 기록 표에서 읽지 못하는 요청: 이 표에 없는 것은 화면 수치에도 없습니다.
 const NOT_LOGGED = '기록 대상이 아닌 요청: /api/auth/*, 정적 파일. 기록 표는 최근 2000건만 보관합니다.';
 
+// 점검 이름별 기록: 그 이름으로 남은 줄 수와 가장 최근 줄(번호·시각·경로·상태). 점검 결과(attackAttempts)의 이름으로 서버 기록을 찾을 수 있게 합니다.
+function attackRows(rows) {
+  const byName = new Map();
+  for (const row of rows) {                       // rows는 최신 번호부터
+    if (typeof row.attack_id !== 'string' || !row.attack_id) continue;
+    const entry = byName.get(row.attack_id);
+    if (entry) { entry.rows += 1; continue; }
+    byName.set(row.attack_id, { attackId: row.attack_id, rows: 1, latest: { seq: row.id, at: row.at, method: row.method, route: row.route, status: row.status, requestId: mask(row.request_id) } });
+  }
+  return [...byName.values()].sort((a, b) => a.attackId.localeCompare(b.attackId));
+}
+
 function requestsBlock(rows, truncated) {
   if (rows === null) return { label: LABEL.unknown, note: '요청 기록 표(defense_ops_log)를 읽지 못했습니다. supabase/step12-ops.sql 적용 여부를 확인하세요.', total: null };
   const sums = { allowed: 0, denied: 0, errors: 0 };
@@ -72,6 +85,7 @@ function requestsBlock(rows, truncated) {
   return { label: LABEL.observed, scope: '기록 표 전체(맨 끝 번호까지 한 시점에서 읽음)', note: NOT_LOGGED, truncated, total: rows.length, ...sums,
     newestSeq: rows[0]?.id ?? null, oldestSeq: rows.at(-1)?.id ?? null, newestAt: rows[0]?.at ?? null, oldestAt: rows.at(-1)?.at ?? null,
     byRoute: [...routes.values()].sort((a, b) => a.route.localeCompare(b.route)),
+    byAttack: attackRows(rows),
     records: rows.slice(0, RECORD_LIMIT).map(row => ({ seq: row.id, ...maskedRecord(row) })) };
 }
 
@@ -97,7 +111,7 @@ export async function buildSummary(deps = {}) {
   const head = await readOrNull('defense_ops_log', { select: 'id', order: 'id.desc', limit: '1' }, deps);
   const snapshot = head === null ? null : (head[0]?.id ?? 0);
   const [log, devices, audit, backups] = await Promise.all([
-    snapshot === null ? null : readOrNull('defense_ops_log', { select: 'id,at,request_id,method,route,status,reason,auth,actor', id: `lte.${snapshot}`, order: 'id.desc', limit: String(LOG_LIMIT) }, deps),
+    snapshot === null ? null : readOrNull('defense_ops_log', { select: 'id,at,request_id,method,route,status,reason,auth,actor,attack_id', id: `lte.${snapshot}`, order: 'id.desc', limit: String(LOG_LIMIT) }, deps),
     readOrNull('defense_devices', { select: 'status', limit: String(ROW_LIMIT) }, deps),
     readOrNull('defense_restore_audit', { select: 'outcome', limit: String(ROW_LIMIT) }, deps),
     readOrNull('defense_notes_backup', { select: 'note_id', limit: String(ROW_LIMIT) }, deps),
@@ -136,7 +150,7 @@ export async function handleOps(request, response, deps = {}) {
     const id = request.query?.requestId;
     if (id !== undefined) {
       if (typeof id !== 'string' || !UUID.test(id)) return fail(response, 400, 'INVALID_REQUEST_ID');
-      const rows = await select('defense_ops_log', { select: 'at,request_id,method,route,status,reason,auth', request_id: `eq.${id.toLowerCase()}`, order: 'at.desc', limit: '1' }, deps);
+      const rows = await select('defense_ops_log', { select: 'at,request_id,method,route,status,reason,auth,attack_id', request_id: `eq.${id.toLowerCase()}`, order: 'at.desc', limit: '1' }, deps);
       const row = rows[0];
       return json(response, 200, { schema: 'aleph.ops.record.v1', record: row ? { ...maskedRecord(row), requestId: row.request_id } : null });
     }

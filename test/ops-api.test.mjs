@@ -78,6 +78,23 @@ test('화면의 수치는 가린 서버 기록과 같다: 합계 = 허용+거부
   assert.match(r.note, /\/api\/auth\/\*.*정적 파일/u);                // 기록하지 않는 요청을 화면이 밝힌다
 }));
 
+test('가린 기록에는 점검 이름(attackId)이 그대로 남고, 점검 이름별로 줄 수와 최근 줄을 찾을 수 있다', () => withEnv(async () => {
+  const log = [logRow(1, { status: 401, reason: 'login_required', actor: null, auth: 'none', attack_id: 'anonymous_api_notes_read' }),
+    logRow(2, { status: 401, reason: 'login_required', actor: null, auth: 'bearer', attack_id: 'forged_token_notes_read' }),
+    logRow(3, { route: 'ops', status: 401, reason: 'login_required', actor: null, auth: 'none', attack_id: 'ops_summary_without_login' }),
+    logRow(4, { status: 401, reason: 'login_required', actor: null, auth: 'none', attack_id: 'anonymous_api_notes_read' }),
+    logRow(5)];
+  const w = world({ log });
+  const r = (await summary(w)).body.requests;
+  assert.deepEqual(r.records.map(item => item.attackId), [null, 'anonymous_api_notes_read', 'ops_summary_without_login', 'forged_token_notes_read', 'anonymous_api_notes_read']);
+  assert.deepEqual(r.byAttack.map(item => [item.attackId, item.rows, item.latest.seq, item.latest.route, item.latest.status]),
+    [['anonymous_api_notes_read', 2, 4, 'notes', 401], ['forged_token_notes_read', 1, 2, 'notes', 401], ['ops_summary_without_login', 1, 3, 'ops', 401]]);
+  assert.equal(r.byAttack.reduce((sum, item) => sum + item.rows, 0), log.filter(row => row.attack_id).length);   // 점검 이름별 줄 수 합 = 이름이 붙은 기록 줄 수
+  assert.ok(w.selects.some(item => item.table === 'defense_ops_log' && item.select.includes('attack_id')));
+  const one = await call(w, { method: 'GET', headers: asA, query: { requestId: log[1].request_id } });
+  assert.equal(one.body.record.attackId, 'forged_token_notes_read');            // 요청 ID로 찾은 한 줄에도 점검 이름이 있다
+}));
+
 test('오래된 기록도 24시간 같은 기준으로 자르지 않고 표 전체를 센다', () => withEnv(async () => {
   const old = Array.from({ length: 7 }, (_, i) => logRow(i + 1, { at: '2025-01-01T00:00:00.000Z' }));
   const r = (await summary(world({ log: old }))).body.requests;
