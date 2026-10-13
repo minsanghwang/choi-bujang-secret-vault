@@ -41,5 +41,7 @@ export function deploymentIdentity(env, config) {
     identity.originalApiUrl = config.originalApiUrl ?? null;
     identity.database = config.database ?? null;
   }
+  // 10단계부터 복구 경로(공개 정보)도 알립니다. 심판이 이 주소로 복구 요청을 보냅니다.
+  if (config.step >= 10) identity.restoreRoute = config.restoreRoute ?? null;
   return identity;
 }

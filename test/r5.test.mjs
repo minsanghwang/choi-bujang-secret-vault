@@ -197,3 +197,14 @@ test('step 10 attack check lists the restore and regression checks as not run', 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('step 10 identity also announces the public restore route, earlier steps do not', () => {
+  const env = { VERCEL_GIT_PROVIDER: 'github', VERCEL_GIT_REPO_OWNER: 'student', VERCEL_GIT_REPO_SLUG: 'vault',
+    VERCEL_GIT_COMMIT_SHA: 'a'.repeat(40), VERCEL_URL: 'vault-abc.vercel.app' };
+  const base = { ...config, step: 10, restoreRoute: 'POST /api/restore',
+    identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' }, allowedRoutes: ['GET /api/notes'],
+    originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
+  assert.equal(deploymentIdentity(env, base).restoreRoute, 'POST /api/restore');
+  assert.equal(deploymentIdentity(env, { ...base, restoreRoute: undefined }).restoreRoute, null);
+  assert.equal('restoreRoute' in deploymentIdentity(env, { ...base, step: 9 }), false);
+});
