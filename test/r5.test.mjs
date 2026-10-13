@@ -293,7 +293,7 @@ test('step 12 attack check tags every request it really sends with its attackId 
   try {
     globalThis.fetch = async (url, options = {}) => {
       const path = new URL(url).pathname;
-      sent.push({ path, headers: options.headers ?? {} });
+      sent.push({ path, search: new URL(url).search, headers: options.headers ?? {}, evidence: options.alephEvidence, host: new URL(url).host });
       const plain = (status, type, data) => ({ status, headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
         json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) });
       if (path === '/') return plain(200, 'text/html', '<html>login</html>');
@@ -308,6 +308,14 @@ test('step 12 attack check tags every request it really sends with its attackId 
       'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'static_data_json_read']);
     assert.equal(sent.filter(item => item.headers['x-attack-id']).length, sent.length);                  // 보낸 요청은 모두 태그가 있음
     assert.equal(sent.length, 8);                                                                       // 점검마다 요청 한 번, 다른 요청 없음
+    // 점검마다 요청 한 번, 결과 목록과 같은 순서로 보냄
+    assert.deepEqual(sent.map(item => item.headers['x-attack-id']), results.filter(item => sent.some(req => req.headers['x-attack-id'] === item.attackId)).map(item => item.attackId));
+    for (const item of sent) {
+      assert.equal(item.evidence, item.headers['x-attack-id']);                                        // alephEvidence = 점검 이름
+      if (item.host === new URL(config.publicAppUrl).host) assert.equal(item.search, `?attackId=${item.headers['x-attack-id']}`);  // 우리 앱 주소에는 ?attackId=
+      else assert.equal(item.search, '');                                                              // 원본 저장소 주소에는 붙이지 않음
+    }
+    for (const result of results) if (!sent.some(req => req.headers['x-attack-id'] === result.attackId)) assert.match(result.observed, /^미실행\(not_run\):/u, result.attackId);
     for (const item of sent) assert.match(item.headers['x-request-id'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
     for (const result of results) {
       const request = sent.find(item => item.headers['x-attack-id'] === result.attackId);
