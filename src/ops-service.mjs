@@ -56,7 +56,7 @@ function busiestWindow(rows) {
 }
 
 // 기록 표에서 읽지 못하는 요청: 이 표에 없는 것은 화면 수치에도 없습니다.
-const NOT_LOGGED = '기록 대상이 아닌 요청: /api/auth/*, /api/ops, 정적 파일. 기록 표는 최근 2000건만 보관합니다.';
+const NOT_LOGGED = '기록 대상이 아닌 요청: /api/auth/*, 정적 파일. 기록 표는 최근 2000건만 보관합니다.';
 
 function requestsBlock(rows, truncated) {
   if (rows === null) return { label: LABEL.unknown, note: '요청 기록 표(defense_ops_log)를 읽지 못했습니다. supabase/step12-ops.sql 적용 여부를 확인하세요.', total: null };

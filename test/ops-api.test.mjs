@@ -75,7 +75,7 @@ test('화면의 수치는 가린 서버 기록과 같다: 합계 = 허용+거부
   assert.equal(r.total, log.length);                                              // 기록 표를 직접 센 값과 같다(24시간 같은 자르기 없음)
   assert.deepEqual([r.newestSeq, r.oldestSeq], [6, 1]);
   assert.deepEqual(r.records.map(item => item.seq), [6, 5, 4, 3, 2, 1]);          // 화면의 번호로 표의 줄을 찾을 수 있다
-  assert.match(r.note, /\/api\/auth\/\*.*\/api\/ops.*정적 파일/u);                // 기록하지 않는 요청을 화면이 밝힌다
+  assert.match(r.note, /\/api\/auth\/\*.*정적 파일/u);                // 기록하지 않는 요청을 화면이 밝힌다
 }));
 
 test('오래된 기록도 24시간 같은 기준으로 자르지 않고 표 전체를 센다', () => withEnv(async () => {
