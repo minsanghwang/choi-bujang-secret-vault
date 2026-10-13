@@ -15,7 +15,7 @@ function appUrl(config) {
 }
 
 async function send(url, authorization, extraHeaders = {}) {
-  const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000),
+  const response = await fetch(url, { redirect: 'error', signal: timeout(10000),
     headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
@@ -26,13 +26,29 @@ async function send(url, authorization, extraHeaders = {}) {
 }
 const noteCount = data => (Array.isArray(data) ? data.length
   : Array.isArray(data?.notes) ? data.notes.length : 0);
-const b64 = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+// Node 전용 전역(Buffer 등)이 없는 환경에서도 돌도록 base64url을 직접 만듭니다. 입력은 ASCII뿐입니다(JSON 머리·값, 가짜 서명 표시).
+const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+export function base64url(text) {
+  let out = '';
+  for (let i = 0; i < text.length; i += 3) {
+    const a = text.charCodeAt(i) & 255;
+    const b = i + 1 < text.length ? text.charCodeAt(i + 1) & 255 : null;
+    const c = i + 2 < text.length ? text.charCodeAt(i + 2) & 255 : null;
+    out += B64URL[a >> 2] + B64URL[((a & 3) << 4) | ((b ?? 0) >> 4)];
+    if (b !== null) out += B64URL[((b & 15) << 2) | ((c ?? 0) >> 6)];
+    if (c !== null) out += B64URL[c & 63];
+  }
+  return out;
+}
+const b64 = value => base64url(JSON.stringify(value));
+// 시간 제한 신호는 지원하는 환경에서만 붙입니다(없으면 제한 없이 요청).
+const timeout = ms => (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined);
 
 // 서명 없이 직접 만든 가짜 토큰입니다. 학생 발급자·일반 사용자 모양만 흉내 냅니다.
 function forgedToken(identityProvider) {
   const claims = { iss: identityProvider.issuer, aud: identityProvider.audience, role: 'authenticated',
     sub: '00000000-0000-4000-8000-000000000000', exp: Math.floor(Date.now() / 1000) + 3600 };
-  return `Bearer ${b64({ alg: 'ES256', typ: 'JWT' })}.${b64(claims)}.${Buffer.from('forged').toString('base64url')}`;
+  return `Bearer ${b64({ alg: 'ES256', typ: 'JWT' })}.${b64(claims)}.${base64url('forged')}`;
 }
 
 export async function runAttackChecks(config) {
@@ -58,7 +74,7 @@ export async function runAttackChecks(config) {
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app)) : null;
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  const page = await fetch(app, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+  const page = await fetch(app, { redirect: 'error', signal: timeout(10000) });
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
 

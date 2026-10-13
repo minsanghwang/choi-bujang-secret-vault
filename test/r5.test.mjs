@@ -259,3 +259,30 @@ test('step 12 attack check sends only the anonymous ops request and keeps the 41
     globalThis.fetch = originalFetch;
   }
 });
+
+test('attack check does not need Node-only globals such as Buffer and base64url matches the Buffer result', async () => {
+  const { base64url } = await import('../src/attack-check.mjs');
+  for (const text of ['', 'f', 'fo', 'foo', 'forged', '{"alg":"ES256","typ":"JWT"}', 'https://p.supabase.co/auth/v1?x=~']) {
+    assert.equal(base64url(text), Buffer.from(text).toString('base64url'), text);
+  }
+  const savedBuffer = globalThis.Buffer;
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => {
+      const path = new URL(url).pathname;
+      const plain = (status, type, data) => ({ status, headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
+        json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) });   // Response 객체도 Buffer를 쓰므로 단순 객체로 대신함
+      if (path === '/') return plain(200, 'text/html', '<html>login</html>');
+      if (path === '/manifest.webmanifest') return plain(200, 'application/json', { name: 'BYTE BACK 자료실' });
+      return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
+    };
+    delete globalThis.Buffer;
+    const results = await runAttackChecks({ ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+      originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } });
+    assert.ok(results.length >= 15);
+    assert.match(results.find(item => item.attackId === 'forged_token_notes_read').observed, /^가짜 토큰 \/api\/notes 거부됨/u);
+  } finally {
+    globalThis.Buffer = savedBuffer;
+    globalThis.fetch = originalFetch;
+  }
+});
