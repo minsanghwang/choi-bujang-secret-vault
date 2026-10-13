@@ -13,37 +13,24 @@ const MAX_REAUTH_AGE_SECONDS = 900;
 
 // 8단계 구역 표. 엔진이 확인해 넘긴 service·method·path·route가 아래 한 줄과 정확히 맞아야 합니다.
 // 규칙은 자기 메모 읽기(GET)·수정(PUT)과 강사 공지 수정(PUT, 허용하지 않음) 셋뿐이고, 표에 없는 경로·메서드(목록·추가·삭제 포함)는 모두 거부합니다.
-//   note   = 내 자료실 메모(소유자 확인은 자료 API가 최종으로 합니다. 판정기는 소유자 값이 없어, 경로에 사용자 ID가 있을 때만 subjectId와 대조합니다)
+// 8단계부터 자료 ID는 UUID 한 칸만 인정합니다. (7단계 연습의 /notes/demo, 기능 이름, 이름표 ID는 모두 거부)
+//   note   = 내 자료실 메모(소유자 확인은 자료 API가 최종으로 합니다. 판정기는 소유자 값이 없어 아래 소유 기록만 씁니다)
 //   notice = 강사 공지. 요청 계약에 강사 역할 값이 없으므로 이 판정기는 공지 읽기·수정을 모두 허용하지 않습니다(표에 읽기 줄이 없음).
+const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const ZONE_ROUTES = Object.freeze({
-  'GET /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
-  'PUT /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
-  'PUT /notices/:id': { pattern: /^\/notices\/([^/]+)$/u, allow: false },
+  'GET /notes/:id': { pattern: new RegExp(`^/notes/(${UUID_SEGMENT})$`, 'iu'), allow: true },
+  'PUT /notes/:id': { pattern: new RegExp(`^/notes/(${UUID_SEGMENT})$`, 'iu'), allow: true },
+  'PUT /notices/:id': { pattern: new RegExp(`^/notices/(${UUID_SEGMENT})$`, 'iu'), allow: false },
 });
-// 기능 이름이 자료 ID 자리에 들어오지 못하게 막습니다. (자료 ID는 쿼리가 아니라 경로 한 칸으로만 고릅니다)
-const RESERVED_IDS = new Set(['export', 'import', 'search', 'all', 'list', 'new', 'bulk', 'download', 'backup', 'admin', 'share']);
-// 공지·관리자 구역을 가리키는 ID는 메모 경로에서 거부합니다. (공지 ID로 메모 경로를 부르는 우회를 막음)
-// 표시는 ID 맨 앞뿐 아니라 어느 위치에 있어도 읽습니다. (예: note-of-learner_other, memo-notice-1)
-const NOTICE_MARKED_ID = /(notice|announce|teacher|instructor|admin)/iu;
-const USER_MARKED_TOKEN = /(?:learner|student|user|subject)[_-][A-Za-z0-9_-]*/giu;
-const ID_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
 
 function zoneAllowed(request) {
   if (typeof request?.subjectId !== 'string' || !request.subjectId) return false;
   if (typeof request.route !== 'string' || typeof request.method !== 'string' || !Object.hasOwn(ZONE_ROUTES, request.route)) return false;
   const entry = ZONE_ROUTES[request.route];
-  // route는 표의 한 줄과 같아야 하고, 그 줄의 메서드가 요청 method와 같고, path가 그 줄의 모양과 맞아야 합니다.
+  // route는 표의 한 줄과 같아야 하고, 그 줄의 메서드가 요청 method와 같고, path가 그 줄의 모양(UUID 한 칸)과 맞아야 합니다.
   if (request.service !== 'notes' || !request.route.startsWith(`${request.method} `)) return false;
-  const match = typeof request.path === 'string' ? entry.pattern.exec(request.path) : null;
-  if (!match || request.queryLength !== 0) return false;
-  if (match[1] !== undefined && (!ID_SEGMENT.test(match[1]) || RESERVED_IDS.has(match[1].toLowerCase()))) return false;
-  if (match[1] !== undefined && NOTICE_MARKED_ID.test(match[1])) return false;
-  // 사용자를 가리키는 ID(learner_…, student_…, user_…, subject_…)는 요청한 사람의 subjectId로 시작할 때만 허용합니다.
-  // 다른 사용자의 ID가 붙은 경로는 같은 모양이어도 거부합니다. 사용자 표시가 없는 ID는 이 검사로 판단하지 않습니다.
-  // ID 안에 사용자 표시가 하나라도 있으면 모두 요청한 사람의 subjectId로 시작해야 합니다. (다른 사람 표시가 섞이면 거부)
-  const subject = request.subjectId.toLowerCase();
-  if (match[1] !== undefined
-      && [...match[1].matchAll(USER_MARKED_TOKEN)].some(token => !token[0].toLowerCase().startsWith(subject))) return false;
+  if (typeof request.path !== 'string' || !entry.pattern.test(request.path)) return false;
+  if (request.queryLength !== 0) return false;
   return entry.allow;
 }
 
