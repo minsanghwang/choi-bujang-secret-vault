@@ -12,16 +12,13 @@ const BURST_COUNT = 10;                             // 위험 신호 10건 이�
 const MAX_REAUTH_AGE_SECONDS = 900;
 
 // 8단계 구역 표. 엔진이 확인해 넘긴 service·method·path·route가 아래 한 줄과 정확히 맞아야 합니다.
+// 허용은 "내 자료실 메모 읽기·수정" 두 줄뿐입니다. 목록·추가·삭제·공지 읽기를 포함해 표에 없는 줄은 모두 거부합니다.
 //   note   = 내 자료실 메모(주인 확인은 자료 API가 합니다. 판정기는 subjectId가 가명이라 주인을 알 수 없습니다)
 //   notice = 강사 공지. 요청 계약에 강사 역할 값이 없으므로 수정은 이 판정기에서 허용하지 않습니다.
 const ZONE_ROUTES = Object.freeze({
-  'GET /notes': { pattern: /^\/notes$/u, allow: true },
-  'POST /notes': { pattern: /^\/notes$/u, allow: true },
-  'GET /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
-  'PUT /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
-  'DELETE /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true },
-  'GET /notices/:id': { pattern: /^\/notices\/([^/]+)$/u, allow: true },
-  'PUT /notices/:id': { pattern: /^\/notices\/([^/]+)$/u, allow: false },
+  'GET /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true, zone: 'note' },
+  'PUT /notes/:id': { pattern: /^\/notes\/([^/]+)$/u, allow: true, zone: 'note' },
+  'PUT /notices/:id': { pattern: /^\/notices\/([^/]+)$/u, allow: false, zone: 'notice' },
 });
 // 기능 이름이 자료 ID 자리에 들어오지 못하게 막습니다. (자료 ID는 쿼리가 아니라 경로 한 칸으로만 고릅니다)
 const RESERVED_IDS = new Set(['export', 'import', 'search', 'all', 'list', 'new', 'bulk', 'download', 'backup', 'admin', 'share']);
@@ -36,6 +33,11 @@ function zoneAllowed(request) {
   const match = typeof request.path === 'string' ? entry.pattern.exec(request.path) : null;
   if (!match || request.queryLength !== 0) return false;
   if (match[1] !== undefined && (!ID_SEGMENT.test(match[1]) || RESERVED_IDS.has(match[1].toLowerCase()))) return false;
+  // 다른 구역을 가리키는 ID(공지 ID로 메모 경로, 메모 ID로 공지 경로)와 다른 사용자를 가리키는 ID는 구역 안에서도 거부합니다.
+  const other = entry.zone === 'note' ? /^(notice|announce|teacher|instructor|admin)/iu : /^(note|memo)/iu;
+  if (match[1] !== undefined && other.test(match[1])) return false;
+  if (match[1] !== undefined && /^(learner|student|user|subject)[_-]/iu.test(match[1])
+      && !match[1].toLowerCase().startsWith(request.subjectId.toLowerCase())) return false;
   return entry.allow;
 }
 
