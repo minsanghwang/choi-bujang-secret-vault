@@ -37,6 +37,10 @@ drop trigger if exists defense_ops_log_prune_trigger on public.defense_ops_log;
 create trigger defense_ops_log_prune_trigger after insert on public.defense_ops_log
   for each row execute function public.defense_ops_log_prune();
 
+-- ①-2 점검 이름(X-Attack-Id)과 평소와 다른 헤더의 이름을 남기는 열(값은 기록하지 않음). 이미 ①을 실행했다면 이것만 더 실행하세요.
+alter table public.defense_ops_log add column if not exists attack_id text check (attack_id is null or attack_id ~ '^[a-z0-9_.-]{1,80}$');
+alter table public.defense_ops_log add column if not exists hdrs text check (hdrs is null or hdrs ~ '^[a-z0-9,-]{1,200}$');
+
 -- ② 확인(읽기만 합니다): RLS가 켜져 있고 anon·authenticated 권한이 모두 false여야 합니다 ------------------
 select c.relrowsecurity as rls_on,
        has_table_privilege('anon', 'public.defense_ops_log', 'select') as anon_select,

@@ -35,7 +35,7 @@ test('응답을 보내기 전에 결과를 먼저 기록하고, 메서드·경�
   assert.equal(h.out.status, 403);
   assert.deepEqual(h.out.body, { error: 'FORBIDDEN', secret: '메모 본문' });        // 응답은 그대로
   assert.equal(h.out.headers.get('x-request-id'), REQ_ID);
-  assert.deepEqual(h.rows, [{ request_id: REQ_ID, method: 'GET', route: 'notes/:id', status: 403, reason: 'owner_mismatch', auth: 'bearer', actor: null }]);
+  assert.deepEqual(h.rows, [{ request_id: REQ_ID, method: 'GET', route: 'notes/:id', status: 403, reason: 'owner_mismatch', auth: 'bearer', actor: null, attack_id: null, hdrs: null }]);
   assert.ok(!JSON.stringify(h.rows).match(/Bearer|제목|본문|a\.b\.c|\?x=1/u));       // 토큰·본문·쿼리·실제 경로의 ID가 없음
 }));
 
@@ -80,3 +80,30 @@ test('비밀 키가 없으면 기록을 건너뛰고 응답은 그대로다', as
     assert.equal(h.rows.length, 0);
   } finally { if (saved !== undefined) process.env.SUPABASE_SECRET_KEY = saved; }
 });
+
+test('점검 이름 헤더(X-Attack-Id)와 평소와 다른 헤더의 이름만 남기고, 헤더 값과 모양이 틀린 이름은 남기지 않는다', () => withEnv(async () => {
+  const h = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
+  await h.run({ method: 'GET', headers: { 'x-attack-id': 'anonymous_api_notes_read', 'x-aleph-run': 'secret-run-value', 'x-vercel-id': 'iad1::x', 'user-agent': 'x', host: 'h',
+    'sec-fetch-mode': 'cors', 'x-forwarded-for': '1.2.3.4', 'x-judge-token': 'tok_should_not_be_stored' } });
+  assert.equal(h.rows[0].attack_id, 'anonymous_api_notes_read');
+  assert.equal(h.rows[0].hdrs, 'x-aleph-run,x-judge-token');                       // 이름만, 정렬됨
+  assert.ok(!JSON.stringify(h.rows).match(/secret-run-value|tok_should_not_be_stored|1\.2\.3\.4/u));   // 값은 남지 않음
+  const bad = harness((request, response) => response.status(401).json({ error: 'LOGIN_REQUIRED' }));
+  await bad.run({ method: 'GET', headers: { 'x-attack-id': 'Bad Id!<script>' } });
+  assert.equal(bad.rows[0].attack_id, null);
+}));
+
+test('새 열이 아직 없는 DB가 거부해도 그 열 없이 한 번 더 써서 기록이 끊기지 않는다', () => withEnv(async () => {
+  const rows = [];
+  const fetch = async (url, init) => {
+    const row = JSON.parse(init.body);
+    if ('attack_id' in row || 'hdrs' in row) return new Response('{"message":"column not found"}', { status: 400 });
+    rows.push(row);
+    return new Response(null, { status: 201 });
+  };
+  const out = { headers: new Map() };
+  const response = { setHeader: (k, v) => out.headers.set(k.toLowerCase(), v), status: () => ({ json: () => {} }) };
+  await withOpsLog('notes', (request, res) => res.status(200).json([]), { fetch })({ method: 'GET', headers: { 'x-attack-id': 'a' } }, response);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(Object.keys(rows[0]).sort(), ['actor', 'auth', 'method', 'reason', 'request_id', 'route', 'status']);
+}));
