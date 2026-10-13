@@ -21,16 +21,16 @@ const sentIds = {};
 // 헤더 이름은 소문자로 붙입니다(HTTP 헤더는 대소문자를 가리지 않지만, 기록 도구가 객체의 키를 그대로 읽는 경우를 위해).
 const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
 
-// alephEvidence의 형식이 문서에 없어서, 같은 점검을 형식만 바꿔 보냅니다: ① 점검 이름 문자열 ② {attackId, requestId} 객체.
-// 요청은 모두 읽기 전용(GET)이라 서버 상태를 바꾸지 않고, 결과에는 마지막 요청의 ID를 적습니다.
-const evidenceVariants = (attackId, requestId) => [attackId, { attackId, requestId }];
+// alephEvidence의 형식이 문서에 없어서, 같은 읽기 전용 요청을 형식만 바꿔 보냅니다.
+// ① 점검 이름 문자열 ② {attackId} ③ {attack_id} ④ {attackId, requestId}. 결과에는 마지막(④) 요청의 ID를 적습니다.
+const evidenceVariants = (attackId, requestId) => [attackId, { attackId }, { attack_id: attackId }, { attackId, requestId }];
 
 async function send(url, authorization, extraHeaders = {}, attackId = null) {
   let response;
-  for (const evidence of attackId ? evidenceVariants(attackId, null) : [null]) {
+  for (const evidence of attackId ? [0, 1, 2, 3] : [null]) {
     const tags = attackId ? tagged(attackId) : {};
     response = await fetch(url, { redirect: 'error', signal: timeout(10000),
-      ...(attackId ? { alephEvidence: typeof evidence === 'object' ? { ...evidence, requestId: tags['x-request-id'] } : evidence } : {}),
+      ...(attackId ? { alephEvidence: evidenceVariants(attackId, tags['x-request-id'])[evidence] } : {}),
       headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...tags } });
   }
   const contentType = response.headers.get('content-type') ?? '';
@@ -92,10 +92,10 @@ export async function runAttackChecks(config) {
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
   let page;
-  for (const evidence of evidenceVariants('public_key_in_screen_code', null)) {
+  for (const index of [0, 1, 2, 3]) {
     const tags = tagged('public_key_in_screen_code');
     page = await fetch(app, { redirect: 'error', signal: timeout(10000),
-      alephEvidence: typeof evidence === 'object' ? { ...evidence, requestId: tags['x-request-id'] } : evidence, headers: tags });
+      alephEvidence: evidenceVariants('public_key_in_screen_code', tags['x-request-id'])[index], headers: tags });
   }
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
