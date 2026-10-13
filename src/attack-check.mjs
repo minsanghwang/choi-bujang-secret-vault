@@ -21,13 +21,16 @@ const sentIds = {};
 // 헤더 이름은 소문자로 붙입니다(HTTP 헤더는 대소문자를 가리지 않지만, 기록 도구가 객체의 키를 그대로 읽는 경우를 위해).
 const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
 
-// alephEvidence의 형식이 문서에 없어, 점검 이름 문자열은 이미 시험했으므로 이번에는 {attackId, requestId} 객체 하나만 보냅니다.
-// 격리 환경의 요청 횟수 제한을 넘지 않도록 점검마다 읽기 전용(GET) 요청을 한 번만 보냅니다.
+// alephEvidence의 형식이 문서에 없습니다. 문자열과 {attackId, requestId}는 이미 시험했으므로, 이번에는 키가 하나뿐인 객체 두 가지를 보냅니다.
+// 격리 환경은 요청을 24번까지만 허용하므로 점검마다 읽기 전용(GET) 요청을 두 번(총 16번)만 보내고, 결과에는 마지막 요청의 ID를 적습니다.
+const evidenceVariants = attackId => [{ attack_id: attackId }, { attackId }];
 async function send(url, authorization, extraHeaders = {}, attackId = null) {
-  const tags = attackId ? tagged(attackId) : {};
-  const response = await fetch(url, { redirect: 'error', signal: timeout(10000),
-    ...(attackId ? { alephEvidence: { attackId, requestId: tags['x-request-id'] } } : {}),
-    headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...tags } });
+  let response;
+  for (const evidence of attackId ? evidenceVariants(attackId) : [null]) {
+    const tags = attackId ? tagged(attackId) : {};
+    response = await fetch(url, { redirect: 'error', signal: timeout(10000), ...(evidence ? { alephEvidence: evidence } : {}),
+      headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...tags } });
+  }
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
   if (/json/iu.test(contentType)) {
@@ -86,9 +89,10 @@ export async function runAttackChecks(config) {
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  const pageTags = tagged('public_key_in_screen_code');
-  const page = await fetch(app, { redirect: 'error', signal: timeout(10000),
-    alephEvidence: { attackId: 'public_key_in_screen_code', requestId: pageTags['x-request-id'] }, headers: pageTags });
+  let page;
+  for (const evidence of evidenceVariants('public_key_in_screen_code')) {
+    page = await fetch(app, { redirect: 'error', signal: timeout(10000), alephEvidence: evidence, headers: tagged('public_key_in_screen_code') });
+  }
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
 
