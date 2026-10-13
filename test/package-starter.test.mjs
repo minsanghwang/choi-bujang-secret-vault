@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const baseline = JSON.parse(await readFile(new URL('../package/baseline-functions.json', import.meta.url)));
 
 // 학생이 단계별로 직접 추가한 서버 함수입니다. 시작 틀 기준표(baseline)는 바꾸지 않습니다.
-const studentFunctions = ['api/notes.js'];
+const studentFunctions = ['api/notes.js', 'api/notices.js'];
 
 test('패키징 함수 기준표는 시작 틀의 실제 API와 일치한다', async () => {
   const actual = (await readdir(new URL('../api/', import.meta.url)))

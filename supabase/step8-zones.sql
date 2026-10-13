@@ -17,11 +17,12 @@ alter table public.defense_notes drop constraint if exists defense_notes_zone_ch
 alter table public.defense_notes
   add constraint defense_notes_zone_check check (zone in ('note', 'notice'));
 
--- 강사 공지는 아래처럼 대시보드에서 직접 만듭니다. (예시이며 지금 실행하지 않습니다. 소유자는 강사 계정의 ID)
---   insert into public.defense_notes (owner_id, zone, title, content)
---   values ('<강사 사용자 UUID>', 'notice', '공지 제목', '공개 가능한 가상 공지');
+-- 공개 가능한 가상 공지 한 건을 넣습니다. (이미 있으면 넣지 않습니다. 소유자는 비워 두며, 수정은 강사만 됩니다)
+insert into public.defense_notes (owner_id, zone, position, title, content)
+select null, 'notice', 1, '강사 공지 (가상)', '공개 가능한 가상 공지입니다. 일반 학생은 읽기만 할 수 있습니다.'
+where not exists (select 1 from public.defense_notes where zone = 'notice' and title = '강사 공지 (가상)');
 
--- ===== ③ 적용 후: 정상은 zone 열이 있고, 기존 행은 모두 note입니다 =====
+-- ===== ③ 적용 후: 정상은 note 5건(기존 행), notice 1건이고 anon·authenticated 권한은 둘 다 false입니다 =====
 select zone, count(*) from public.defense_notes group by zone order by zone;
 select has_table_privilege('anon', 'public.defense_notes', 'SELECT') as anon_select,
        has_table_privilege('authenticated', 'public.defense_notes', 'SELECT') as authenticated_select;

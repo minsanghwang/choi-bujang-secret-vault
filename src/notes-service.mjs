@@ -211,3 +211,24 @@ export const handleItem = (request, response, deps = {}) =>
 // /api/notices/:id : GET 읽기(로그인한 사용자), PUT 수정(강사만). 추가·삭제는 이 API에 없습니다.
 export const handleNoticeItem = (request, response, deps = {}) =>
   serveItem(ZONES.NOTICE, ['GET', 'PUT'], request, response, deps);
+
+// /api/notices : GET 강사 공지 목록(로그인한 사용자 모두). 추가는 이 API에 없습니다.
+// 구역 열(zone)이 아직 없는 DB(8단계 SQL 적용 전)에는 공지가 없으므로 빈 목록을 돌려줍니다.
+export async function handleNoticeCollection(request, response, deps = {}) {
+  if (request.method !== 'GET') {
+    response.setHeader('Allow', 'GET');
+    return fail(response, 405, 'METHOD_NOT_ALLOWED');
+  }
+  const who = await requireLogin(request, response, deps);
+  if (!who) return undefined;
+  try {
+    const upstream = await rest('GET', { select: 'id,title,content,zone', zone: 'eq.notice',
+      order: 'position.asc,created_at.asc' }, undefined, deps);
+    if (upstream.status === 400) return json(response, 200, []);
+    if (!upstream.ok || !Array.isArray(upstream.rows)) return await upstreamFailed(response, upstream);
+    return json(response, 200, upstream.rows.filter(row => authorize({ route: ZONES.NOTICE, action: 'read', row, userId: who.userId }).allow).map(view));
+  } catch {
+    console.error('notes_request_failed');
+    return fail(response, 502, 'NOTES_UPSTREAM_ERROR');
+  }
+}

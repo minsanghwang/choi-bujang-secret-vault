@@ -148,3 +148,30 @@ test('zones.mjs: 판단 함수는 입력한 값만으로 결정한다', () => {
   assert.equal(authorize({ route: 'note', action: 'read', row, userId: A, env: {} }).allow, true);
   assert.equal(authorize({ route: 'note', action: 'read', row: { ...row, owner_id: null }, userId: A, env: {} }).reason, 'owner_missing');
 });
+
+import { handleNoticeCollection } from '../src/notes-service.mjs';
+const list = (db, headers, method = 'GET') => call(handleNoticeCollection, { method, headers }, { verify, fetch: db.fetch });
+
+test('공지 목록: 로그인한 사용자 모두 공지만 읽고, 메모는 섞이지 않는다', async () => {
+  await withEnv({}, async () => {
+    const db = memoryDb(rows());
+    assert.deepEqual((await list(db, {})).body, { error: 'LOGIN_REQUIRED' });
+    for (const headers of [asA, asB]) {
+      const res = await list(db, headers);
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body, [{ id: NOTICE, title: '공지', body: 'n' }]);
+    }
+    assert.equal(db.calls.at(-1).url.searchParams.get('zone'), 'eq.notice');
+    for (const method of ['POST', 'PUT', 'DELETE']) assert.equal((await list(db, asTeacher, method)).status, 405);
+    assert.equal((await notice(db, asB, 'PUT', { title: 'x', body: 'y' })).status, 403);   // 목록을 읽어도 수정은 강사만
+  });
+});
+
+test('공지 목록: 구역 열이 없는 옛 DB에서는 빈 목록이다', async () => {
+  await withEnv({}, async () => {
+    const legacy = memoryDb([{ id: NOTE, owner_id: A, title: 'A 메모', content: 'a' }], { zoneColumn: false });
+    const res = await list(legacy, asA);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, []);
+  });
+});
