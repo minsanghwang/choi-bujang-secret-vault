@@ -14,7 +14,7 @@ function appUrl(config) {
   return app;
 }
 
-// 이 점검이 실제로 보낸 요청에는 점검 이름(X-Attack-Id)과 요청 ID(X-Request-Id)를 붙입니다.
+// 이 점검이 실제로 보낸 요청에는 fetch의 alephEvidence(점검 이름)와 헤더 X-Attack-Id·X-Request-Id를 붙입니다.
 // 서버 기록(요청 ID)과 이 결과를 같은 요청으로 대조할 수 있고, 요청을 보내지 않은 점검에는 붙일 것이 없어 미실행으로 남습니다.
 const uuid4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/gu, c => { const r = Math.floor(Math.random() * 16); return (c === 'x' ? r : (r & 3) | 8).toString(16); });
 const sentIds = {};
@@ -22,7 +22,7 @@ const sentIds = {};
 const tagged = attackId => { const requestId = uuid4(); sentIds[attackId] = requestId; return { 'x-attack-id': attackId, 'x-aleph-attack-id': attackId, 'x-request-id': requestId }; };
 
 async function send(url, authorization, extraHeaders = {}, attackId = null) {
-  const response = await fetch(url, { redirect: 'error', signal: timeout(10000), ...(attackId ? { attackId } : {}),
+  const response = await fetch(url, { redirect: 'error', signal: timeout(10000), ...(attackId ? { alephEvidence: attackId } : {}),
     headers: { ...(authorization ? { Authorization: authorization } : {}), ...extraHeaders, ...(attackId ? tagged(attackId) : {}) } });
   const contentType = response.headers.get('content-type') ?? '';
   let data = null;
@@ -81,18 +81,8 @@ export async function runAttackChecks(config) {
   // 12단계: 로그인 없이 작전실 요약(/api/ops)을 부르면 거부되어야 합니다. 이 요청만 실제로 보냅니다.
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
-  // 임시 관찰(원인을 찾으면 지웁니다): 점검이 도는 환경의 fetch 소스와 전역 이름을 서버 기록(쿼리)으로 확인합니다. 비밀값은 읽지 않습니다.
-  if (config.step >= 12) {
-    const chunks = (label, text, max) => { const out = []; for (let i = 0; i < text.length && out.length < max; i += 110) out.push([`${label}${out.length}`, text.slice(i, i + 110)]); return out; };
-    let probe = [];
-    try { probe = [...chunks('s', String(fetch), 10), ...chunks('g', Object.getOwnPropertyNames(globalThis).join(','), 5)]; } catch { /* 관찰 실패 */ }
-    for (const [name, text] of probe) {
-      try { await fetch(new URL(`/api/device?c=${name}&f=${base64url(text)}`, app), { redirect: 'error', signal: timeout(10000) }); } catch { /* 관찰 실패는 점검 결과에 영향을 주지 않습니다. */ }
-    }
-  }
-
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  const page = await fetch(app, { redirect: 'error', signal: timeout(10000), attackId: 'public_key_in_screen_code', headers: tagged('public_key_in_screen_code') });
+  const page = await fetch(app, { redirect: 'error', signal: timeout(10000), alephEvidence: 'public_key_in_screen_code', headers: tagged('public_key_in_screen_code') });
   const pageText = await page.text();
   const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
 

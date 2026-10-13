@@ -293,8 +293,7 @@ test('step 12 attack check tags every request it really sends with its attackId 
   try {
     globalThis.fetch = async (url, options = {}) => {
       const path = new URL(url).pathname;
-      if (new URL(url).search.startsWith('?c=')) return { status: 401, headers: { get: () => null }, json: async () => ({}), text: async () => '' };   // 임시 관찰 요청은 점검이 아님
-      sent.push({ path, headers: options.headers ?? {} });
+      sent.push({ path, headers: options.headers ?? {}, evidence: options.alephEvidence });
       const plain = (status, type, data) => ({ status, headers: { get: name => (name.toLowerCase() === 'content-type' ? type : null) },
         json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) });
       if (path === '/') return plain(200, 'text/html', '<html>login</html>');
@@ -308,6 +307,8 @@ test('step 12 attack check tags every request it really sends with its attackId 
     assert.deepEqual(sentIds, ['anonymous_api_notes_read', 'device_status_without_login', 'direct_original_api_anon_read', 'forged_token_notes_read',
       'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'static_data_json_read']);
     assert.equal(sent.filter(item => item.headers['x-attack-id']).length, sent.length);                  // 보낸 요청은 모두 태그가 있음
+    for (const item of sent) assert.equal(item.evidence, item.headers['x-attack-id']);                  // fetch의 alephEvidence = 그 요청의 attackId
+    assert.equal(sent.length, 8);                                                                       // 임시 관찰 요청은 없음
     for (const item of sent) assert.match(item.headers['x-request-id'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
     for (const result of results) {
       const request = sent.find(item => item.headers['x-attack-id'] === result.attackId);
