@@ -36,6 +36,17 @@
 | 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- known-cve` → `block 8 · alert 8 · record 8`(kc-01~08 완전한 구문, kc-09~16 단어·조각뿐, kc-17~24 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:cve` → 거부 규칙 7개(근거 경보 8건), 다시 흘리기: 명확한 공격 막힘 8/8 · 애매한 시도 0 · 정상 이벤트 0 |
 | 시험 | `node --test test/xdr-known-cve.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
 
+## 보너스 xdr-04 「몰래 심어진 프로그램을 찾아냅니다」
+
+| 항목 | 내용 |
+| --- | --- |
+| 경보 읽기 | `xdr/persistence/read-alerts.mjs`(확인용, `decide.mjs`가 불러오지 않음): `xdr/fixtures/persistence.json`에서 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 값은 가립니다. 실행 `node xdr/persistence/read-alerts.mjs` → `경보 24건 · 뽑은 줄 24줄 · 같음` |
+| 패턴 목록 | `xdr/persistence/patterns.json`: MITRE ATT&CK T1543 · T1053 근거의 네 패턴. `unsigned_new_service`, `unfamiliar_scheduled_task`, `startup_folder_change`(시작 폴더의 하위 기법은 T1547.001이라 근거 줄에 함께 적음), `temp_folder_target`(임시 폴더를 가리키는 지속성 항목, 단독으로는 약함). 패턴마다 근거 한 줄 |
+| 판단 모듈 | `xdr/persistence/decide.mjs`: 패턴을 파일 맨 위 상수로 옮겨 적고 `decide(alert)` 하나를 내보냅니다. **import·파일 읽기/쓰기·네트워크 없음.** T1543·T1053 표시가 없으면 `record`, 표시가 있어도 수준이 낮고 신호가 없으면 `record`(서명된 기존 서비스, 평소 시각의 예약 등). 기본 0.5에 패턴 점수·서비스+예약 작업 동시·연속 3건·원격 주소·규칙 수준을 더하고, **서로 다른 종류의 신호가 2개 이상일 때만** 0.85 이상 `block`까지 갑니다. 임시 폴더 파일 하나뿐("서비스 등록은 없습니다")이거나 이름만 낯선 경우는 `alert`까지만 갑니다 |
+| 알림과 차단 | `xdr/persistence/respond.mjs`(`npm run xdr:respond:persist`): `block`만 출발 주소별 거부 규칙(`xdr/persistence/deny-rules.json`, 규칙 `xdr_persistence_block`, 근거 경보 번호, 60분 뒤 만료)으로 내보내고, `block`·`alert`를 `xdr/alerts.log`에 쌓습니다. 정상 기록이 있는 주소는 규칙에 넣지 않습니다. 판정기 연결 방식은 xdr-01과 같습니다(`checkAddress`, 판정기 코드는 그대로, 실제 엔진 연결은 확인하지 않았습니다). 이 규칙은 출발 주소 단위이며 PC 단위 격리를 실제로 집행하는 것은 운영 측 연결입니다 |
+| 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- persistence` → `block 8 · alert 8 · record 8`(ps-01~08 겹친 신호, ps-09~16 신호 하나·불분명, ps-17~24 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:persist` → 거부 규칙 7개(근거 경보 8건), 다시 흘리기: 명확한 공격 막힘 8/8 · 애매한 시도 0 · 정상 이벤트 0 |
+| 시험 | `node --test test/xdr-persistence.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
+
 ## 12단계 탈환 작전실 요약 (서비스·경로)
 
 | 항목 | 내용 |

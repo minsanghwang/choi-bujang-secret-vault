@@ -1,0 +1,155 @@
+{
+  "schema": "aleph.xdr.result.v1",
+  "moduleKey": "persistence",
+  "decisions": [
+    {
+      "alertId": "ps-01",
+      "action": "block",
+      "confidence": 0.87,
+      "reason": "근거 패턴: unsigned_new_service + temp_folder_target · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "ps-02",
+      "action": "block",
+      "confidence": 0.87,
+      "reason": "근거 패턴: unfamiliar_scheduled_task + temp_folder_target · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "ps-03",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: unfamiliar_scheduled_task + startup_folder_change · 반복 횟수 없음 · 수준 11"
+    },
+    {
+      "alertId": "ps-04",
+      "action": "block",
+      "confidence": 0.92,
+      "reason": "근거 패턴: unsigned_new_service · 반복 3건 · 수준 12"
+    },
+    {
+      "alertId": "ps-05",
+      "action": "block",
+      "confidence": 0.85,
+      "reason": "근거 패턴: unfamiliar_scheduled_task + temp_folder_target · 반복 횟수 없음 · 수준 10"
+    },
+    {
+      "alertId": "ps-06",
+      "action": "block",
+      "confidence": 0.87,
+      "reason": "근거 패턴: unsigned_new_service + temp_folder_target · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "ps-07",
+      "action": "block",
+      "confidence": 0.85,
+      "reason": "근거 패턴: temp_folder_target · 반복 횟수 없음 · 수준 11"
+    },
+    {
+      "alertId": "ps-08",
+      "action": "block",
+      "confidence": 0.87,
+      "reason": "근거 패턴: unfamiliar_scheduled_task + temp_folder_target · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "ps-09",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 6"
+    },
+    {
+      "alertId": "ps-10",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 7"
+    },
+    {
+      "alertId": "ps-11",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 5"
+    },
+    {
+      "alertId": "ps-12",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 6"
+    },
+    {
+      "alertId": "ps-13",
+      "action": "alert",
+      "confidence": 0.65,
+      "reason": "근거 패턴: temp_folder_target · 반복 횟수 없음 · 수준 8"
+    },
+    {
+      "alertId": "ps-14",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 6"
+    },
+    {
+      "alertId": "ps-15",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 7"
+    },
+    {
+      "alertId": "ps-16",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 서명·경로·목록 신호 없음 · 반복 횟수 없음 · 수준 5"
+    },
+    {
+      "alertId": "ps-17",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1543·T1053 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ps-18",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "평소 항목으로 보임(신호 없음, 낮은 수준)"
+    },
+    {
+      "alertId": "ps-19",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "평소 항목으로 보임(신호 없음, 낮은 수준)"
+    },
+    {
+      "alertId": "ps-20",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1543·T1053 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ps-21",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1543·T1053 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ps-22",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1543·T1053 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ps-23",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "평소 항목으로 보임(신호 없음, 낮은 수준)"
+    },
+    {
+      "alertId": "ps-24",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1543·T1053 표시 없는 정상 이벤트)"
+    }
+  ],
+  "counts": {
+    "block": 8,
+    "alert": 8,
+    "record": 8
+  }
+}
