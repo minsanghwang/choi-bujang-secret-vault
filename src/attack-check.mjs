@@ -76,10 +76,17 @@ export async function runAttackChecks(config) {
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
 
+  // 12단계: 제출 묶음의 observed는 심판이 그 attackId로 직접 실행·기록한 공격의 결과를 적는 칸입니다.
+  // 학생 자기 점검이 보낸 공개 GET은 그 기록이 아니므로, 12단계 제출 묶음에서는 요청을 보내지 않고 모든 점검을 not_run으로 적습니다.
+  // 같은 정상·금지 요청의 실제 결과(HTTP 상태·요청 ID·확인 시각)는 npm run ops:table로 배포에 직접 보내 README에 기록합니다.
+  const live = config.step < 12;
+  const offline = async () => ({ status: null, json: false, data: null, raw: { status: null, text: async () => '' } });
+  const request = live ? send : offline;
+
   // 1단계 시작 틀이 준 점검 이름(anonymous_note_read)을 그대로 씁니다. 같은 요청(로그인 없이 /data.json)을 2단계부터 다른 이름으로 바꿨던 것을 되돌린 것입니다.
-  const staticData = await send(new URL('/data.json', app), null, {}, 'anonymous_note_read');
-  const anonymous = await send(new URL('/api/notes', app), null, {}, 'anonymous_api_notes_read');
-  const forged = await send(new URL('/api/notes', app), forgedToken(config.identityProvider), {}, 'forged_token_notes_read');
+  const staticData = await request(new URL('/data.json', app), null, {}, 'anonymous_note_read');
+  const anonymous = await request(new URL('/api/notes', app), null, {}, 'anonymous_api_notes_read');
+  const forged = await request(new URL('/api/notes', app), forgedToken(config.identityProvider), {}, 'forged_token_notes_read');
   // 12단계: 결과에는 성공 문구(거부됨·보이지 않음 같은 판정)를 쓰지 않고, 보낸 요청과 실제 응답에서 관측한 값만 적습니다.
   const errorCode = result => (typeof result.data?.error === 'string' && /^[A-Z0-9_]{1,40}$/u.test(result.data.error) ? `, error=${result.data.error}` : '');
   const facts = (request, result, extra = '') => `${request} → HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}${errorCode(result)}, 메모 ${noteCount(result.data)}건${extra}`;
@@ -87,7 +94,7 @@ export async function runAttackChecks(config) {
 
   // 요청은 결과 목록과 같은 순서로 한 점검에 한 번씩만 보냅니다.
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
-  const pageResponse = await send(app, null, {}, 'public_key_in_screen_code', true);
+  const pageResponse = await request(app, null, {}, 'public_key_in_screen_code', true);
   const page = pageResponse.raw;
   const pageText = await page.text();
   const keyMatches = (pageText.match(/sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu) ?? []).length;
@@ -97,18 +104,18 @@ export async function runAttackChecks(config) {
   const publicKey = config.database?.publishableKey;
   if (typeof config.originalApiUrl === 'string' && config.originalApiUrl.startsWith('https://')
       && typeof publicKey === 'string' && publicKey) {
-    direct = await send(config.originalApiUrl, null, { apikey: publicKey }, 'direct_original_api_anon_read', false, false);
+    direct = await request(config.originalApiUrl, null, { apikey: publicKey }, 'direct_original_api_anon_read', false, false);
   }
   const directObserved = direct === null
     ? '미실행(not_run): originalApiUrl 또는 공개 키가 설정에 없어 직접 요청을 보내지 않음'
     : facts('GET 원본 저장소 /rest/v1(공개 키만)', direct);
 
   // 11단계: 로그인 없이 기기 승인 상태를 물으면 거부되어야 하고, 앱 설정(manifest)은 공개되어야 합니다. 이 두 요청만 실제로 보냅니다.
-  const deviceAnonymous = config.step >= 11 ? await send(new URL('/api/device', app), null, {}, 'device_status_without_login') : null;
-  const manifest = config.step >= 11 ? await send(new URL('/manifest.webmanifest', app), null, {}, 'manifest_public') : null;
+  const deviceAnonymous = config.step >= 11 ? await request(new URL('/api/device', app), null, {}, 'device_status_without_login') : null;
+  const manifest = config.step >= 11 ? await request(new URL('/manifest.webmanifest', app), null, {}, 'manifest_public') : null;
 
   // 12단계: 로그인 없이 작전실 요약(/api/ops)을 부르면 거부되어야 합니다. 이 요청만 실제로 보냅니다.
-  const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
+  const opsAnonymous = config.step >= 12 ? await request(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
   const results = [
     { attackId: 'anonymous_note_read', expected: '비로그인으로 /data.json을 열어도 메모가 없어야 함',
@@ -168,6 +175,8 @@ export async function runAttackChecks(config) {
       expected: '41종 공격 방어는 심판이 실행하며, 학생 점검은 그 결과를 만들거나 대신 표시하지 않음',
       observed: '미실행(not_run): 41종 총공세는 심판이 보내며, 학생 점검과 작전실은 결과를 갖고 있지 않음. 1~11단계 정상·금지 요청의 실측은 npm run ops:table(로그인 계정 환경변수 필요)로만 남김' }] : []),
   ];
+  // 12단계: 요청을 보내지 않았으므로 모든 점검이 not_run입니다(실패라는 뜻이 아니라 이 묶음에서 실행 기록이 없다는 뜻).
+  if (!live) return results.map(({ attackId, expected }) => ({ attackId, expected, observed: 'not_run' }));
   // 실제로 보낸 점검에만 그 요청 ID를 덧붙입니다(미실행 점검에는 붙지 않음).
   return results.map(item => (sentIds[item.attackId] ? { ...item, observed: `${item.observed} [요청 ID ${sentIds[item.attackId]}]` } : item));
 }

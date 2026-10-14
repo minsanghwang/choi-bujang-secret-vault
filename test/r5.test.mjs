@@ -235,25 +235,21 @@ test('step 11 attack check sends only the anonymous device and manifest requests
   }
 });
 
-test('step 12 attack check sends only the anonymous ops request and keeps the 41-attack run as not run', async () => {
+test('step 12 bundle check sends no request and writes every attackId as not_run (judge-recorded attacks only)', async () => {
   const originalFetch = globalThis.fetch;
   const seen = [];
   try {
-    globalThis.fetch = async (url) => {
-      const path = new URL(url).pathname;
-      seen.push(path);
-      if (path === '/') return new Response('<html>login</html>', { status: 200 });
-      if (path === '/manifest.webmanifest') return Response.json({ name: 'BYTE BACK 자료실' }, { status: 200 });
-      return Response.json({ error: 'LOGIN_REQUIRED' }, { status: 401 });
-    };
+    globalThis.fetch = async (url) => { seen.push(String(url)); throw new Error('no network expected'); };
     const step12 = { ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
       originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
     const results = await runAttackChecks(step12);
+    assert.deepEqual(seen, []);                                                                        // 제출 묶음은 요청을 보내지 않음
+    assert.equal(results.length, 19);
+    assert.ok(results.every(item => item.observed === 'not_run'));                                     // 심판이 기록한 실행이 아니므로 모두 not_run
+    assert.ok(results.every(item => Object.keys(item).sort().join(',') === 'attackId,expected,observed'));
     assert.deepEqual(results.slice(-2).map(item => item.attackId), ['ops_summary_without_login', 'full_41_attack_run']);
-    assert.match(results.at(-2).observed, /^GET \/api\/ops\(비로그인\) → HTTP 401, JSON, error=LOGIN_REQUIRED, 메모 0건, schema 값 없음/u);
-    assert.match(results.at(-1).observed, /^미실행/u);
-    assert.ok(seen.includes('/api/ops'));
-    assert.ok(results.length <= 20);
+    assert.equal(new Set(results.map(item => item.attackId)).size, results.length);
+    assert.ok(results.every(item => item.expected.length <= 300));
     await assert.rejects(runAttackChecks({ ...step12, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
@@ -277,7 +273,7 @@ test('attack check does not need Node-only globals such as Buffer and base64url 
       return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
     };
     delete globalThis.Buffer;
-    const results = await runAttackChecks({ ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+    const results = await runAttackChecks({ ...config, step: 11, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
       originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } });
     assert.ok(results.length >= 15);
     assert.match(results.find(item => item.attackId === 'forged_token_notes_read').observed, /^GET \/api\/notes\(서명 없는 토큰\) → HTTP 401/u);
@@ -306,10 +302,10 @@ test('attack check also runs where URL has no searchParams or origin (isolated j
       if (path === '/manifest.webmanifest') return plain(200, 'application/json', { name: 'BYTE BACK 자료실' });
       return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
     };
-    const results = await runAttackChecks({ ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+    const results = await runAttackChecks({ ...config, step: 11, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
       originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } });
     assert.ok(results.length >= 15);
-    assert.equal(seen.length, 8);
+    assert.equal(seen.length, 7);
     assert.ok(seen.every(([url, evidence]) => (url.includes('p.supabase.co') ? !url.includes('attackId') : url.endsWith(`attackId=${evidence}`))));
   } finally {
     globalThis.URL = OriginalURL;
@@ -317,7 +313,7 @@ test('attack check also runs where URL has no searchParams or origin (isolated j
   }
 });
 
-test('step 12 attack check tags every request it really sends with its attackId and request id, and leaves unsent checks untagged', async () => {
+test('step 11 attack check tags every request it really sends with its attackId and request id, and leaves unsent checks untagged', async () => {
   const originalFetch = globalThis.fetch;
   const sent = [];
   try {
@@ -330,14 +326,14 @@ test('step 12 attack check tags every request it really sends with its attackId 
       if (path === '/manifest.webmanifest') return plain(200, 'application/json', { name: 'BYTE BACK 자료실' });
       return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
     };
-    const step12 = { ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+    const step12 = { ...config, step: 11, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
       originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } };
     const results = await runAttackChecks(step12);
     const sentIds = [...new Set(sent.map(item => item.headers['x-attack-id']).filter(Boolean))].sort();
     assert.deepEqual(sentIds, ['anonymous_api_notes_read', 'device_status_without_login', 'direct_original_api_anon_read', 'forged_token_notes_read',
-      'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'anonymous_note_read'].sort());
+      'manifest_public', 'public_key_in_screen_code', 'anonymous_note_read'].sort());
     assert.equal(sent.filter(item => item.headers['x-attack-id']).length, sent.length);                  // 보낸 요청은 모두 태그가 있음
-    assert.equal(sent.length, 8);                                                                       // 점검마다 요청 한 번, 다른 요청 없음
+    assert.equal(sent.length, 7);                                                                       // 점검마다 요청 한 번, 다른 요청 없음
     // 점검마다 요청 한 번, 결과 목록과 같은 순서로 보냄
     assert.deepEqual(sent.map(item => item.headers['x-attack-id']), results.filter(item => sent.some(req => req.headers['x-attack-id'] === item.attackId)).map(item => item.attackId));
     for (const item of sent) {
@@ -376,10 +372,10 @@ test('보낸 점검의 결과에는 성공 문구(거부됨·보이지 않음·�
       if (path === '/manifest.webmanifest') return plain(200, 'application/json', { name: 'BYTE BACK 자료실' });
       return plain(401, 'application/json', { error: 'LOGIN_REQUIRED' });
     };
-    const results = await runAttackChecks({ ...config, step: 12, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
+    const results = await runAttackChecks({ ...config, step: 11, identityProvider: { issuer: 'https://p.supabase.co/auth/v1', audience: 'authenticated' },
       originalApiUrl: 'https://p.supabase.co/rest/v1/notes', database: { publishableKey: 'pk-test-public' } });
     const sent = results.filter(item => !item.observed.startsWith('미실행'));
-    assert.equal(sent.length, 8);
+    assert.equal(sent.length, 7);
     for (const item of sent) {
       assert.doesNotMatch(item.observed, /거부됨|거부되지|보이지 않음|보임|공개됨|확인하지 못함|통과|성공|안전/u, item.attackId);
       assert.match(item.observed, /^GET .+ → HTTP \d{3}/u, item.attackId);            // 보낸 요청 → 실제 응답 상태
