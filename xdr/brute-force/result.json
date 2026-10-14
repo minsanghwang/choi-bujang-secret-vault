@@ -1,0 +1,179 @@
+{
+  "schema": "aleph.xdr.result.v1",
+  "moduleKey": "brute-force",
+  "decisions": [
+    {
+      "alertId": "bf-01",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 48건 · 수준 12"
+    },
+    {
+      "alertId": "bf-02",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: same_source_failure_burst + password_spraying · 실패 건수 없음 · 수준 12"
+    },
+    {
+      "alertId": "bf-03",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: same_source_failure_burst + password_spraying · 실패 36건 · 수준 10"
+    },
+    {
+      "alertId": "bf-04",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 52건 · 수준 12"
+    },
+    {
+      "alertId": "bf-05",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: same_source_failure_burst + password_spraying · 실패 20건 · 수준 11"
+    },
+    {
+      "alertId": "bf-06",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 61건 · 수준 12"
+    },
+    {
+      "alertId": "bf-07",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 40건 · 수준 10"
+    },
+    {
+      "alertId": "bf-08",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 70건 · 수준 12"
+    },
+    {
+      "alertId": "bf-09",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: same_source_failure_burst + password_spraying · 실패 15건 · 수준 11"
+    },
+    {
+      "alertId": "bf-10",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 90건 · 수준 12"
+    },
+    {
+      "alertId": "bf-11",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 4건 · 수준 6 · 실패 뒤 성공(차단 안 함)"
+    },
+    {
+      "alertId": "bf-12",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 6건 · 수준 7 · 실패 뒤 성공(차단 안 함)"
+    },
+    {
+      "alertId": "bf-13",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 3건 · 수준 5"
+    },
+    {
+      "alertId": "bf-14",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 5건 · 수준 6"
+    },
+    {
+      "alertId": "bf-15",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 4건 · 수준 7"
+    },
+    {
+      "alertId": "bf-16",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 3건 · 수준 5"
+    },
+    {
+      "alertId": "bf-17",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 4건 · 수준 6 · 실패 뒤 성공(차단 안 함)"
+    },
+    {
+      "alertId": "bf-18",
+      "action": "alert",
+      "confidence": 0.55,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 8건 · 수준 8"
+    },
+    {
+      "alertId": "bf-19",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: same_source_failure_burst · 실패 3건 · 수준 6"
+    },
+    {
+      "alertId": "bf-20",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-21",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-22",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-23",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-24",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-25",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-26",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-27",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "bf-28",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1110 표시 없는 정상 이벤트)"
+    }
+  ],
+  "counts": {
+    "block": 10,
+    "alert": 9,
+    "record": 9
+  }
+}

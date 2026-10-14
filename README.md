@@ -2,6 +2,18 @@
 
 ## 현재 상태: 12단계 「탈환 작전실을 완성합니다」
 
+## 보너스 xdr-01 「무차별 로그인 공격을 잡아 냅니다」
+
+| 항목 | 내용 |
+|---|---|
+| 경보 읽기 | `xdr/brute-force/read-alerts.mjs`(확인용, `decide.mjs`가 불러오지 않음): `xdr/fixtures/brute-force.json`의 Wazuh 경보에서 시각·출발 주소·계정·규칙 수준·설명만 뽑고, 비밀값처럼 보이는 값은 가립니다. 실행 `node xdr/brute-force/read-alerts.mjs` → `경보 28건 · 뽑은 줄 28줄 · 같음` |
+| 패턴 목록 | `xdr/brute-force/patterns.json`: MITRE ATT&CK T1110 근거의 두 패턴만. `same_source_failure_burst`(T1110.001 Password Guessing, 같은 주소의 짧은 시간 연속 실패), `password_spraying`(T1110.003, 여러 계정에 같은 비밀번호). 패턴마다 근거 한 줄 |
+| 판단 모듈 | `xdr/brute-force/decide.mjs`: 패턴을 파일 맨 위 상수로 옮겨 적고 `decide(alert)` 하나를 내보냅니다. **import·파일 읽기/쓰기·네트워크 없음.** T1110 표시가 없으면 `record`. T1110이면 기본 0.5에 실패 건수(10·15·30건 이상)·규칙 수준(8·10·12 이상)·여러 계정 대입을 더해 확신도를 매기고, 0.85 이상 `block`, 0.5 이상 `alert`, 그 아래 `record`. "실패 뒤 성공했습니다"는 사용자 실수일 수 있어 `block`하지 않습니다. Wazuh가 문자열로 담는 건수(`"48"`)는 숫자만 있을 때만 읽습니다 |
+| 알림과 차단 | `xdr/brute-force/respond.mjs`(`npm run xdr:respond`): `result.json`의 `block`만 출발 주소별 거부 규칙(`xdr/brute-force/deny-rules.json`, 규칙 `xdr_brute_force_block`, 근거 경보 번호, 근거 경보 시각부터 60분 뒤 만료)으로 내보내고, `block`·`alert`를 `xdr/alerts.log`에 한 줄씩 쌓습니다(같은 경보는 다시 쓰지 않음). 같은 주소에 정상 기록(`record`)이나 "실패 뒤 성공"이 있으면 규칙에 넣지 않습니다 |
+| 판정기 연결 | 판정기 요청 계약(`docs/DECIDER_REQUEST.md`)에 출발 주소가 없어 `src/decider.mjs`의 `decide()`는 주소를 볼 수 없습니다. 그래서 **판정기의 기존 규칙과 코드는 바꾸지 않고**, 판정기에 확인 단계를 하나 더하는 부품으로 `checkAddress(rules, address, at)`을 둡니다. 요청이 판정기에 닿기 전에 출발 주소가 만료 전 거부 규칙에 걸리면 `deny · xdr_brute_force`를 돌려주고, 아니면 판정기로 넘깁니다. 실제 엔진 앞단에 이 부품을 꽂는 것은 운영 측 연결이 필요하며 이 저장소에서 확인하지 않았습니다 |
+| 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- brute-force` → `block 10 · alert 9 · record 9`(bf-01~10 명확한 공격, bf-11~19 애매한 시도, bf-20~28 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond` → 거부 규칙 9개(근거 경보 10건), 다시 흘리기: 명확한 공격 막힘 10/10 · 애매한 시도 막힘 0 · 정상 이벤트 막힘 0 |
+| 시험 | `node --test test/xdr-brute-force.test.mjs`(로컬 시험 경보, 심판 판정 아님). 심판은 격리 환경에서 `decide.mjs` 한 파일만 다시 불러 결과를 봅니다 |
+
 ## 12단계 탈환 작전실 요약 (서비스·경로)
 
 | 항목 | 내용 |

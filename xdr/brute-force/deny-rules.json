@@ -1,0 +1,109 @@
+{
+  "schema": "aleph.xdr.deny-rules.v1",
+  "moduleKey": "brute-force",
+  "ruleId": "xdr_brute_force_block",
+  "blockMinutes": 60,
+  "rules": [
+    {
+      "address": "203.0.113.10",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-01",
+        "bf-02"
+      ],
+      "since": "2026-09-27T09:12:01+09:00",
+      "expiresAt": "2026-09-27T01:12:40.000Z"
+    },
+    {
+      "address": "198.51.100.20",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-03"
+      ],
+      "since": "2026-09-27T09:14:02+09:00",
+      "expiresAt": "2026-09-27T01:14:02.000Z"
+    },
+    {
+      "address": "192.0.2.30",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-04"
+      ],
+      "since": "2026-09-27T09:20:11+09:00",
+      "expiresAt": "2026-09-27T01:20:11.000Z"
+    },
+    {
+      "address": "203.0.113.21",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-05"
+      ],
+      "since": "2026-09-27T09:21:00+09:00",
+      "expiresAt": "2026-09-27T01:21:00.000Z"
+    },
+    {
+      "address": "198.51.100.44",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-06"
+      ],
+      "since": "2026-09-27T11:02:15+09:00",
+      "expiresAt": "2026-09-27T03:02:15.000Z"
+    },
+    {
+      "address": "203.0.113.15",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-07"
+      ],
+      "since": "2026-09-27T11:05:40+09:00",
+      "expiresAt": "2026-09-27T03:05:40.000Z"
+    },
+    {
+      "address": "192.0.2.18",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-08"
+      ],
+      "since": "2026-09-27T13:10:02+09:00",
+      "expiresAt": "2026-09-27T05:10:02.000Z"
+    },
+    {
+      "address": "198.51.100.8",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-09"
+      ],
+      "since": "2026-09-27T14:22:18+09:00",
+      "expiresAt": "2026-09-27T06:22:18.000Z"
+    },
+    {
+      "address": "203.0.113.40",
+      "decision": "deny",
+      "reasonCode": "xdr_brute_force",
+      "ruleId": "xdr_brute_force_block",
+      "alertIds": [
+        "bf-10"
+      ],
+      "since": "2026-09-27T15:40:01+09:00",
+      "expiresAt": "2026-09-27T07:40:01.000Z"
+    }
+  ],
+  "skipped": []
+}
