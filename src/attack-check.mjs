@@ -77,20 +77,19 @@ export async function runAttackChecks(config) {
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
 
   const staticData = await send(new URL('/data.json', app), null, {}, 'static_data_json_read');
-  const staticLeak = staticData.data !== null
-    && (staticData.data.sampleMarker === config.sampleMarker || noteCount(staticData.data) > 0);
   const anonymous = await send(new URL('/api/notes', app), null, {}, 'anonymous_api_notes_read');
   const forged = await send(new URL('/api/notes', app), forgedToken(config.identityProvider), {}, 'forged_token_notes_read');
-  const denied = result => [401, 403].includes(result.status) && result.json && noteCount(result.data) === 0
-    && typeof result.data?.error === 'string';
-  const describe = (result, ok) => `${ok ? '거부됨' : '거부되지 않음'} (HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}, 메모 ${noteCount(result.data)}건)`;
+  // 12단계: 결과에는 성공 문구(거부됨·보이지 않음 같은 판정)를 쓰지 않고, 보낸 요청과 실제 응답에서 관측한 값만 적습니다.
+  const errorCode = result => (typeof result.data?.error === 'string' && /^[A-Z0-9_]{1,40}$/u.test(result.data.error) ? `, error=${result.data.error}` : '');
+  const facts = (request, result, extra = '') => `${request} → HTTP ${result.status}, ${result.json ? 'JSON' : 'JSON 아님'}${errorCode(result)}, 메모 ${noteCount(result.data)}건${extra}`;
+  const has = value => (value === undefined || value === null ? '없음' : '있음');
 
   // 요청은 결과 목록과 같은 순서로 한 점검에 한 번씩만 보냅니다.
   // 5단계 가점: 첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 보이면 안 됩니다.
   const pageResponse = await send(app, null, {}, 'public_key_in_screen_code', true);
   const page = pageResponse.raw;
   const pageText = await page.text();
-  const keyVisible = /sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/u.test(pageText);
+  const keyMatches = (pageText.match(/sb_publishable_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu) ?? []).length;
 
   // 5단계: 원본 자료 저장소를 공개 키(anon)만으로 직접 불러 봅니다. 메모가 보이면 안 됩니다.
   let direct = null;
@@ -101,7 +100,7 @@ export async function runAttackChecks(config) {
   }
   const directObserved = direct === null
     ? '미실행(not_run): originalApiUrl 또는 공개 키가 설정에 없어 직접 요청을 보내지 않음'
-    : `${noteCount(direct.data) === 0 ? '메모가 보이지 않음' : '메모가 보임'} (HTTP ${direct.status}, 메모 ${noteCount(direct.data)}건)`;
+    : facts('GET 원본 저장소 /rest/v1(공개 키만)', direct);
 
   // 11단계: 로그인 없이 기기 승인 상태를 물으면 거부되어야 하고, 앱 설정(manifest)은 공개되어야 합니다. 이 두 요청만 실제로 보냅니다.
   const deviceAnonymous = config.step >= 11 ? await send(new URL('/api/device', app), null, {}, 'device_status_without_login') : null;
@@ -112,14 +111,13 @@ export async function runAttackChecks(config) {
 
   const results = [
     { attackId: 'static_data_json_read', expected: '비로그인으로 /data.json을 열어도 메모가 없어야 함',
-      observed: staticLeak ? `비로그인 /data.json에서 메모가 보임 (HTTP ${staticData.status})`
-        : `비로그인 /data.json에서 메모가 보이지 않음 (HTTP ${staticData.status})` },
+      observed: facts('GET /data.json(비로그인)', staticData, `, 확인 표시 ${staticData.data?.sampleMarker === config.sampleMarker ? '있음' : '없음'}`) },
     { attackId: 'anonymous_api_notes_read', expected: '로그인 없이 /api/notes를 부르면 401 또는 403과 JSON 오류 문구',
-      observed: `비로그인 /api/notes ${describe(anonymous, denied(anonymous))}` },
+      observed: facts('GET /api/notes(비로그인)', anonymous) },
     { attackId: 'forged_token_notes_read', expected: '서명 없는 가짜 토큰으로 /api/notes를 부르면 401 또는 403과 JSON 오류 문구',
-      observed: `가짜 토큰 /api/notes ${describe(forged, denied(forged))}` },
+      observed: facts('GET /api/notes(서명 없는 토큰)', forged) },
     { attackId: 'public_key_in_screen_code', expected: '첫 화면 코드에 Supabase 공개 키(sb_publishable_… 또는 anon 키)가 없음',
-      observed: `${keyVisible ? '첫 화면에 공개 키가 보임' : '첫 화면에 공개 키가 보이지 않음'} (HTTP ${page.status})` },
+      observed: `GET /(첫 화면) → HTTP ${page.status}, 공개 키 모양 문자열 ${keyMatches}건` },
     { attackId: 'direct_original_api_anon_read', expected: '공개 키(anon)로 원본 자료 저장소를 직접 불러도 메모가 보이지 않음(401·403 또는 빈 목록)',
       observed: directObserved },
     { attackId: 'login_a_note_crud', expected: '정상 A 로그인 뒤 자기 가상 메모 읽기·추가·수정·삭제',
@@ -154,17 +152,17 @@ export async function runAttackChecks(config) {
     // 11단계: 승인 요청·승인 뒤 화면 열림은 로그인 계정과 운영 측 승인이 필요해 학생 점검이 보내지 않습니다.
     ...(config.step >= 11 ? [{ attackId: 'device_status_without_login',
       expected: '로그인 없이 /api/device를 부르면 401 또는 403과 JSON 오류 문구이고 승인 상태가 나오지 않음',
-      observed: `비로그인 /api/device ${describe(deviceAnonymous, denied(deviceAnonymous) && deviceAnonymous.data?.state === undefined)}` },
+      observed: facts('GET /api/device(비로그인)', deviceAnonymous, `, state 값 ${has(deviceAnonymous.data?.state)}`) },
     { attackId: 'manifest_public',
       expected: '/manifest.webmanifest가 공개되고 앱 이름이 있음(자료실을 여는 조건은 서버가 확인한 승인 결과뿐)',
-      observed: `${manifest.status === 200 && manifest.json && typeof manifest.data?.name === 'string' ? '앱 설정이 공개됨' : '앱 설정을 확인하지 못함'} (HTTP ${manifest.status}, ${manifest.json ? 'JSON' : 'JSON 아님'})` },
+      observed: `GET /manifest.webmanifest → HTTP ${manifest.status}, ${manifest.json ? 'JSON' : 'JSON 아님'}, name 값 ${typeof manifest.data?.name === 'string' ? '있음' : '없음'}` },
     { attackId: 'device_approval_gate',
       expected: '승인 전 기기에는 자료가 없고, 서버가 승인한 기기에서만 기존 화면이 열림',
       observed: '미실행(not_run): 이 점검은 로그인 계정과 운영 측 승인 없이 실행되어 POST /api/device를 보내지 않음. 로컬 시험은 가짜 DB와 가짜 화면으로만 확인함' }] : []),
     // 12단계: 작전실 요약은 로그인과 승인된 기기가 필요합니다. 41종 총공세는 심판이 실행하며 학생 점검은 보내지 않습니다.
     ...(config.step >= 12 ? [{ attackId: 'ops_summary_without_login',
       expected: '로그인 없이 /api/ops를 부르면 401 또는 403과 JSON 오류 문구이고 요약 수치가 나오지 않음',
-      observed: `비로그인 /api/ops ${describe(opsAnonymous, denied(opsAnonymous) && opsAnonymous.data?.schema === undefined)}` },
+      observed: facts('GET /api/ops(비로그인)', opsAnonymous, `, schema 값 ${has(opsAnonymous.data?.schema)}`) },
     { attackId: 'full_41_attack_run',
       expected: '41종 공격 방어는 심판이 실행하며, 학생 점검은 그 결과를 만들거나 대신 표시하지 않음',
       observed: '미실행(not_run): 41종 총공세는 심판이 보내며, 학생 점검과 작전실은 결과를 갖고 있지 않음. 1~11단계 정상·금지 요청의 실측은 npm run ops:table(로그인 계정 환경변수 필요)로만 남김' }] : []),
