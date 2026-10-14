@@ -23,7 +23,8 @@
     "xdr:respond": "node xdr/brute-force/respond.mjs",
     "xdr:respond:web": "node xdr/web-injection/respond.mjs",
     "xdr:respond:cve": "node xdr/known-cve/respond.mjs",
-    "xdr:respond:persist": "node xdr/persistence/respond.mjs"
+    "xdr:respond:persist": "node xdr/persistence/respond.mjs",
+    "xdr:respond:priv": "node xdr/privilege/respond.mjs"
   },
   "engines": {
     "node": ">=22"

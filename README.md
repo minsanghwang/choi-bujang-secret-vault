@@ -47,6 +47,17 @@
 | 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- persistence` → `block 8 · alert 8 · record 8`(ps-01~08 겹친 신호, ps-09~16 신호 하나·불분명, ps-17~24 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:persist` → 거부 규칙 7개(근거 경보 8건), 다시 흘리기: 명확한 공격 막힘 8/8 · 애매한 시도 0 · 정상 이벤트 0 |
 | 시험 | `node --test test/xdr-persistence.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
 
+## 보너스 xdr-05 「권한 가로채기를 잡아 냅니다」
+
+| 항목 | 내용 |
+| --- | --- |
+| 경보 읽기 | `xdr/privilege/read-alerts.mjs`(확인용, `decide.mjs`가 불러오지 않음): `xdr/fixtures/privilege.json`에서 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 값은 가립니다. 실행 `node xdr/privilege/read-alerts.mjs` → `경보 26건 · 뽑은 줄 26줄 · 같음` |
+| 패턴 목록 | `xdr/privilege/patterns.json`: MITRE ATT&CK T1068 · T1078 근거의 네 패턴. `admin_group_added`, `unfamiliar_admin_command`, `off_hours_privilege_use`(단독으로는 약함), `borrowed_privilege`(다른 계정의 권한으로 실행). 패턴마다 근거 한 줄 |
+| 판단 모듈 | `xdr/privilege/decide.mjs`: 패턴을 파일 맨 위 상수로 옮겨 적고 `decide(alert)` 하나를 내보냅니다. **import·파일 읽기/쓰기·네트워크 없음.** T1068·T1078 표시가 없으면 `record`, 표시가 있어도 수준이 낮고 신호가 없으면 `record`. 기본 0.5에 패턴 점수·정황(원격 주소·처음 보는 주소·방금 관리자가 됨·빠졌다 다시 들어옴·계정 3개 이상 연속)·규칙 수준을 더하고, **권한이 바뀐 신호와 평소와 다른 정황이 함께 있을 때만** 0.85 이상 `block`까지 갑니다. 평소 주소의 관리자 명령 한 번, 과제 그룹 추가, 취소·실패한 권한 상승은 `alert`까지만 갑니다 |
+| 알림과 차단 | `xdr/privilege/respond.mjs`(`npm run xdr:respond:priv`): `block`만 출발 주소별 거부 규칙(`xdr/privilege/deny-rules.json`, 규칙 `xdr_privilege_block`, 근거 경보 번호, 세션을 거둘 계정 이름 `accounts`, 60분 뒤 만료)으로 내보내고, `block`·`alert`를 `xdr/alerts.log`에 쌓습니다. 정상 기록이 있는 주소는 규칙에 넣지 않습니다. 판정기 요청 계약에는 계정이 없어 대조는 출발 주소로 하며(`checkAddress`, 판정기 코드는 그대로), 계정 세션을 실제로 거두는 집행은 운영 측 연결이 필요하고 이 저장소에서 확인하지 않았습니다 |
+| 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- privilege` → `block 9 · alert 8 · record 9`(pv-01~09 권한 변경+정황, pv-10~17 불분명, pv-18~26 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:priv` → 거부 규칙 8개(근거 경보 9건), 다시 흘리기: 명확한 공격 막힘 9/9 · 애매한 시도 0 · 정상 이벤트 0 |
+| 시험 | `node --test test/xdr-privilege.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
+
 ## 12단계 탈환 작전실 요약 (서비스·경로)
 
 | 항목 | 내용 |

@@ -1,0 +1,31 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "privilege",
+  "source": "MITRE ATT&CK T1068 Exploitation for Privilege Escalation (https://attack.mitre.org/techniques/T1068/) · T1078 Valid Accounts (https://attack.mitre.org/techniques/T1078/)",
+  "patterns": [
+    {
+      "name": "admin_group_added",
+      "technique": "T1078",
+      "condition": "경보에 T1078이 표시되고, 평범한 계정이 관리자 그룹(administrators)에 추가되거나 들어감. 원격 주소에서 추가되었거나, 같은 주소에서 여러 계정이 연속 추가되었거나, 빠졌다가 곧바로 다시 들어온 경우 더 뚜렷한 신호",
+      "evidence": "MITRE ATT&CK T1078 Valid Accounts: 공격자는 훔친 정상 계정을 관리자 그룹에 넣어 높은 권한을 얻고 오래 머문다."
+    },
+    {
+      "name": "unfamiliar_admin_command",
+      "technique": "T1068",
+      "condition": "경보에 T1068이 표시되고, 관리자 명령이 실행되었거나 세션이 관리자 권한으로 바뀜. 방금 관리자가 되었거나 처음 보는 주소에서 일어났다면 더 뚜렷한 신호. 취소·실패·평소 주소의 한 번뿐인 실행은 약한 신호",
+      "evidence": "MITRE ATT&CK T1068 Exploitation for Privilege Escalation: 공격자는 권한 상승 약점을 악용해 평소 하지 않던 관리자 명령을 실행한다."
+    },
+    {
+      "name": "off_hours_privilege_use",
+      "technique": "T1078",
+      "condition": "수업·업무 시간 밖에 관리자 권한 사용이나 관리자 그룹 변경이 일어남. 이 신호 하나만으로는 약하고 위의 패턴과 함께 있을 때만 확신도를 더함",
+      "evidence": "MITRE ATT&CK T1078 Valid Accounts: 도용한 정상 계정은 사용자가 없는 시간대에 권한을 쓰는 경우가 많다."
+    },
+    {
+      "name": "borrowed_privilege",
+      "technique": "T1068",
+      "condition": "한 계정이 다른 계정의 권한으로 관리자 명령을 실행함",
+      "evidence": "MITRE ATT&CK T1068 Exploitation for Privilege Escalation: 다른 계정의 권한을 빌려 쓰는 것은 권한 상승 악용의 전형적인 모습이다."
+    }
+  ]
+}
