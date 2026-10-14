@@ -58,6 +58,17 @@
 | 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- privilege` → `block 9 · alert 8 · record 9`(pv-01~09 권한 변경+정황, pv-10~17 불분명, pv-18~26 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:priv` → 거부 규칙 8개(근거 경보 9건), 다시 흘리기: 명확한 공격 막힘 9/9 · 애매한 시도 0 · 정상 이벤트 0 |
 | 시험 | `node --test test/xdr-privilege.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
 
+## 보너스 xdr-06 「자료 빼돌리기를 잡아 냅니다」
+
+| 항목 | 내용 |
+| --- | --- |
+| 경보 읽기 | `xdr/exfiltration/read-alerts.mjs`(확인용, `decide.mjs`가 불러오지 않음): `xdr/fixtures/exfiltration.json`에서 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 값은 가립니다. 실행 `node xdr/exfiltration/read-alerts.mjs` → `경보 30건 · 뽑은 줄 30줄 · 같음` |
+| 패턴 목록 | `xdr/exfiltration/patterns.json`: MITRE ATT&CK T1041 · T1048 근거의 네 패턴. `large_transfer_new_destination`, `bulk_file_copy`, `off_hours_archive_transfer`, `repeated_large_transfer`. 패턴마다 근거 한 줄 |
+| 판단 모듈 | `xdr/exfiltration/decide.mjs`: 패턴을 파일 맨 위 상수로 옮겨 적고 `decide(alert)` 하나를 내보냅니다. **import·파일 읽기/쓰기·네트워크 없음.** T1041·T1048 표시가 없으면 `record`, 표시가 있어도 수준이 낮고 신호가 없으면 `record`. 전송량(문자열 `"240000000"`은 숫자만 있을 때 읽음)·낯선 목적지·업무 시간 밖·반복·파일 수를 점수로 더하고, **50MB 이상이면서 서로 다른 종류의 신호가 2개 이상이고 패턴에 맞을 때만** 0.85 이상 `block`까지 갑니다. 작은 전송은 목적지가 낯설어도 `alert`까지만 갑니다 |
+| 알림과 차단 | `xdr/exfiltration/respond.mjs`(`npm run xdr:respond:exfil`): 다른 모듈과 달리 **자료가 나간 목적지 주소(`dstip`)**를 막습니다. `block`만 목적지별 거부 규칙(`xdr/exfiltration/deny-rules.json`, 규칙 `xdr_exfiltration_block`, 근거 경보 번호, 내보낸 출발 주소 `sources`, 60분 뒤 만료)으로 내보내고, `block`·`alert`를 `xdr/alerts.log`에 쌓습니다. 정상 전송이 오간 목적지는 규칙에 넣지 않습니다. 판정기 요청 계약에는 목적지 주소 항목이 없어 `checkAddress`(판정기 코드는 그대로) 앞단 부품으로만 두며, 실제 엔진에서의 집행은 확인하지 않았습니다 |
+| 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- exfiltration` → `block 10 · alert 10 · record 10`(ex-01~10 대용량+겹친 신호, ex-11~20 작거나 불분명, ex-21~30 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:exfil` → 거부 규칙 8개(근거 경보 10건), 다시 흘리기: 명확한 공격 막힘 10/10 · 애매한 시도 0 · 정상 이벤트 0 |
+| 시험 | `node --test test/xdr-exfiltration.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
+
 ## 12단계 탈환 작전실 요약 (서비스·경로)
 
 | 항목 | 내용 |

@@ -1,0 +1,191 @@
+{
+  "schema": "aleph.xdr.result.v1",
+  "moduleKey": "exfiltration",
+  "decisions": [
+    {
+      "alertId": "ex-01",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination + bulk_file_copy · 전송 240MB · 수준 12"
+    },
+    {
+      "alertId": "ex-02",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination + off_hours_archive_transfer · 전송 180MB · 수준 12"
+    },
+    {
+      "alertId": "ex-03",
+      "action": "block",
+      "confidence": 0.85,
+      "reason": "근거 패턴: repeated_large_transfer · 전송 90MB · 수준 11"
+    },
+    {
+      "alertId": "ex-04",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination + bulk_file_copy · 전송 120MB · 수준 12"
+    },
+    {
+      "alertId": "ex-05",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination + bulk_file_copy · 전송 70MB · 수준 10"
+    },
+    {
+      "alertId": "ex-06",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: off_hours_archive_transfer + repeated_large_transfer · 전송 210MB · 수준 12"
+    },
+    {
+      "alertId": "ex-07",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination · 전송 150MB · 수준 11"
+    },
+    {
+      "alertId": "ex-08",
+      "action": "block",
+      "confidence": 0.92,
+      "reason": "근거 패턴: bulk_file_copy · 전송 320MB · 수준 12"
+    },
+    {
+      "alertId": "ex-09",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination + repeated_large_transfer · 전송 80MB · 수준 10"
+    },
+    {
+      "alertId": "ex-10",
+      "action": "block",
+      "confidence": 0.99,
+      "reason": "근거 패턴: large_transfer_new_destination · 전송 110MB · 수준 12"
+    },
+    {
+      "alertId": "ex-11",
+      "action": "alert",
+      "confidence": 0.65,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 8MB · 수준 6"
+    },
+    {
+      "alertId": "ex-12",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 12MB · 수준 7"
+    },
+    {
+      "alertId": "ex-13",
+      "action": "alert",
+      "confidence": 0.55,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 2MB · 수준 5"
+    },
+    {
+      "alertId": "ex-14",
+      "action": "alert",
+      "confidence": 0.65,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 0MB · 수준 6"
+    },
+    {
+      "alertId": "ex-15",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 3MB · 수준 8"
+    },
+    {
+      "alertId": "ex-16",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 15MB · 수준 6"
+    },
+    {
+      "alertId": "ex-17",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 6MB · 수준 7"
+    },
+    {
+      "alertId": "ex-18",
+      "action": "alert",
+      "confidence": 0.65,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 0MB · 수준 5"
+    },
+    {
+      "alertId": "ex-19",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 0MB · 수준 6"
+    },
+    {
+      "alertId": "ex-20",
+      "action": "alert",
+      "confidence": 0.55,
+      "reason": "근거 패턴: 대용량·낯선 목적지 겹침 없음 · 전송 5MB · 수준 7"
+    },
+    {
+      "alertId": "ex-21",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-22",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-23",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "평소 전송으로 보임(신호 없음, 낮은 수준)"
+    },
+    {
+      "alertId": "ex-24",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-25",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-26",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-27",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-28",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-29",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "ex-30",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1041·T1048 표시 없는 정상 이벤트)"
+    }
+  ],
+  "counts": {
+    "block": 10,
+    "alert": 10,
+    "record": 10
+  }
+}

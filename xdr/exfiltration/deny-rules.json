@@ -1,0 +1,125 @@
+{
+  "schema": "aleph.xdr.deny-rules.v1",
+  "moduleKey": "exfiltration",
+  "ruleId": "xdr_exfiltration_block",
+  "blockMinutes": 60,
+  "rules": [
+    {
+      "address": "203.0.113.50",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "192.0.2.20",
+        "198.51.100.20"
+      ],
+      "alertIds": [
+        "ex-01",
+        "ex-03"
+      ],
+      "since": "2026-09-27T09:16:03+09:00",
+      "expiresAt": "2026-09-27T02:05:14.000Z"
+    },
+    {
+      "address": "198.51.100.40",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "192.0.2.20",
+        "203.0.113.20"
+      ],
+      "alertIds": [
+        "ex-02",
+        "ex-04"
+      ],
+      "since": "2026-09-27T09:16:48+09:00",
+      "expiresAt": "2026-09-27T02:20:07.000Z"
+    },
+    {
+      "address": "203.0.113.55",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "192.0.2.25"
+      ],
+      "alertIds": [
+        "ex-05"
+      ],
+      "since": "2026-09-27T11:04:26+09:00",
+      "expiresAt": "2026-09-27T03:04:26.000Z"
+    },
+    {
+      "address": "192.0.2.90",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "198.51.100.25"
+      ],
+      "alertIds": [
+        "ex-06"
+      ],
+      "since": "2026-09-27T12:02:19+09:00",
+      "expiresAt": "2026-09-27T04:02:19.000Z"
+    },
+    {
+      "address": "198.51.100.45",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "203.0.113.25"
+      ],
+      "alertIds": [
+        "ex-07"
+      ],
+      "since": "2026-09-27T13:12:08+09:00",
+      "expiresAt": "2026-09-27T05:12:08.000Z"
+    },
+    {
+      "address": "203.0.113.60",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "192.0.2.26"
+      ],
+      "alertIds": [
+        "ex-08"
+      ],
+      "since": "2026-09-27T14:03:41+09:00",
+      "expiresAt": "2026-09-27T06:03:41.000Z"
+    },
+    {
+      "address": "203.0.113.61",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "198.51.100.26"
+      ],
+      "alertIds": [
+        "ex-09"
+      ],
+      "since": "2026-09-27T15:08:12+09:00",
+      "expiresAt": "2026-09-27T07:08:12.000Z"
+    },
+    {
+      "address": "198.51.100.46",
+      "decision": "deny",
+      "reasonCode": "xdr_exfiltration",
+      "ruleId": "xdr_exfiltration_block",
+      "sources": [
+        "203.0.113.26"
+      ],
+      "alertIds": [
+        "ex-10"
+      ],
+      "since": "2026-09-27T16:01:05+09:00",
+      "expiresAt": "2026-09-27T08:01:05.000Z"
+    }
+  ],
+  "skipped": []
+}

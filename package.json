@@ -24,7 +24,8 @@
     "xdr:respond:web": "node xdr/web-injection/respond.mjs",
     "xdr:respond:cve": "node xdr/known-cve/respond.mjs",
     "xdr:respond:persist": "node xdr/persistence/respond.mjs",
-    "xdr:respond:priv": "node xdr/privilege/respond.mjs"
+    "xdr:respond:priv": "node xdr/privilege/respond.mjs",
+    "xdr:respond:exfil": "node xdr/exfiltration/respond.mjs"
   },
   "engines": {
     "node": ">=22"

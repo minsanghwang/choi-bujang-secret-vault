@@ -1,0 +1,31 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "exfiltration",
+  "source": "MITRE ATT&CK T1041 Exfiltration Over C2 Channel (https://attack.mitre.org/techniques/T1041/) · T1048 Exfiltration Over Alternative Protocol (https://attack.mitre.org/techniques/T1048/)",
+  "patterns": [
+    {
+      "name": "large_transfer_new_destination",
+      "technique": "T1048",
+      "condition": "경보에 T1048이나 T1041이 표시되고, 처음 보는 목적지(또는 평소에 쓰지 않던 포트)로 50MB 이상 전송됨. 100MB 이상이면 더 뚜렷한 신호",
+      "evidence": "MITRE ATT&CK T1048 Exfiltration Over Alternative Protocol: 공격자는 평소 쓰지 않는 목적지나 통로로 큰 자료를 한꺼번에 내보낸다."
+    },
+    {
+      "name": "bulk_file_copy",
+      "technique": "T1041",
+      "condition": "경보에 T1041이나 T1048이 표시되고, 짧은 시간에 파일 50건 이상이 50MB 이상으로 외부에 나감",
+      "evidence": "MITRE ATT&CK T1041 Exfiltration Over C2 Channel: 공격자는 이미 열어 둔 통로로 모아 둔 자료를 대량으로 한 번에 내보낸다."
+    },
+    {
+      "name": "off_hours_archive_transfer",
+      "technique": "T1048",
+      "condition": "경보에 T1048이나 T1041이 표시되고, 수업·업무 시간 밖에 압축 파일이나 대용량 전송이 일어남",
+      "evidence": "MITRE ATT&CK T1048 Exfiltration Over Alternative Protocol: 자료를 압축해 사용자가 없는 시간대에 빼내면 눈에 덜 띈다."
+    },
+    {
+      "name": "repeated_large_transfer",
+      "technique": "T1041",
+      "condition": "경보에 T1041이나 T1048이 표시되고, 같은 목적지로 50MB 이상 전송이 5번 이상 반복됨",
+      "evidence": "MITRE ATT&CK T1041 Exfiltration Over C2 Channel: 공격자는 같은 통로로 자료를 나눠 반복해서 내보낸다."
+    }
+  ]
+}
