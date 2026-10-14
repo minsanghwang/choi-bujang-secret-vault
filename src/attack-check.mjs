@@ -76,7 +76,8 @@ export async function runAttackChecks(config) {
   if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) throw new Error('가상 메모의 확인 표시를 넣어 주세요.');
   if (!config.identityProvider?.issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 적어 주세요.');
 
-  const staticData = await send(new URL('/data.json', app), null, {}, 'static_data_json_read');
+  // 1단계 시작 틀이 준 점검 이름(anonymous_note_read)을 그대로 씁니다. 같은 요청(로그인 없이 /data.json)을 2단계부터 다른 이름으로 바꿨던 것을 되돌린 것입니다.
+  const staticData = await send(new URL('/data.json', app), null, {}, 'anonymous_note_read');
   const anonymous = await send(new URL('/api/notes', app), null, {}, 'anonymous_api_notes_read');
   const forged = await send(new URL('/api/notes', app), forgedToken(config.identityProvider), {}, 'forged_token_notes_read');
   // 12단계: 결과에는 성공 문구(거부됨·보이지 않음 같은 판정)를 쓰지 않고, 보낸 요청과 실제 응답에서 관측한 값만 적습니다.
@@ -110,7 +111,7 @@ export async function runAttackChecks(config) {
   const opsAnonymous = config.step >= 12 ? await send(new URL('/api/ops', app), null, {}, 'ops_summary_without_login') : null;
 
   const results = [
-    { attackId: 'static_data_json_read', expected: '비로그인으로 /data.json을 열어도 메모가 없어야 함',
+    { attackId: 'anonymous_note_read', expected: '비로그인으로 /data.json을 열어도 메모가 없어야 함',
       observed: facts('GET /data.json(비로그인)', staticData, `, 확인 표시 ${staticData.data?.sampleMarker === config.sampleMarker ? '있음' : '없음'}`) },
     { attackId: 'anonymous_api_notes_read', expected: '로그인 없이 /api/notes를 부르면 401 또는 403과 JSON 오류 문구',
       observed: facts('GET /api/notes(비로그인)', anonymous) },

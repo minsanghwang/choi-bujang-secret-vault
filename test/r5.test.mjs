@@ -335,7 +335,7 @@ test('step 12 attack check tags every request it really sends with its attackId 
     const results = await runAttackChecks(step12);
     const sentIds = [...new Set(sent.map(item => item.headers['x-attack-id']).filter(Boolean))].sort();
     assert.deepEqual(sentIds, ['anonymous_api_notes_read', 'device_status_without_login', 'direct_original_api_anon_read', 'forged_token_notes_read',
-      'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'static_data_json_read']);
+      'manifest_public', 'ops_summary_without_login', 'public_key_in_screen_code', 'anonymous_note_read'].sort());
     assert.equal(sent.filter(item => item.headers['x-attack-id']).length, sent.length);                  // 보낸 요청은 모두 태그가 있음
     assert.equal(sent.length, 8);                                                                       // 점검마다 요청 한 번, 다른 요청 없음
     // 점검마다 요청 한 번, 결과 목록과 같은 순서로 보냄
