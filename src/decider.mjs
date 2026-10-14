@@ -51,6 +51,29 @@ function rememberOwner(request) {
   owners.set(key, request.subjectId.toLowerCase());
 }
 
+// 12단계 총공세 보완: 주인이 아직 기록되지 않은 메모 경로에 무인증 요청(subjectId 없음)이 들어오면 그 경로를 "다툼 중"으로 표시합니다.
+// 다툼 중인 경로는 누가 처음 요청해도 주인으로 기록하지 않고 추가 확인(step_up)을 요구하며, 엔진이 새 로그인을 확인해 준 요청만 허용하고 주인으로 기록합니다.
+// (무인증 조회 뒤 다른 사용자가 먼저 와서 주인이 되고, 진짜 주인이 거부되는 순서를 막습니다. 무인증 요청이 없으면 기존 8단계 동작 그대로입니다.)
+const CONTEST_SECONDS = 600;
+const MAX_CONTESTED = 5000;
+const contested = new Map();                               // 경로 → 표시한 시각(ms)
+const notePath = request => typeof request?.path === 'string' && /^\/notes\/[^/]+$/u.test(request.path);
+const anonymous = request => typeof request?.subjectId !== 'string' || !request.subjectId;
+function markContested(request) {
+  const key = ownerKey(request);
+  if (!key || owners.has(key)) return;                     // 이미 주인이 있는 경로는 기존 소유 기록으로 판단합니다.
+  contested.delete(key);
+  if (contested.size >= MAX_CONTESTED) contested.delete(contested.keys().next().value);
+  contested.set(key, Date.now());
+}
+function isContested(request) {
+  const key = ownerKey(request);
+  const since = key ? contested.get(key) : undefined;
+  if (since === undefined) return false;
+  if (Date.now() - since > CONTEST_SECONDS * 1000) { contested.delete(key); return false; }
+  return !owners.has(key);
+}
+
 const isCount = value => Number.isInteger(value) && value >= 0;
 
 // 값이 없거나 형식·출처가 맞지 않으면 null을 돌려줍니다. 정상값으로 채우지 않습니다.
@@ -78,6 +101,9 @@ export async function decide(request) {
   const answer = (decision, reasonCode, ruleId) => ({
     schema: 'aleph.decision.v1', requestId: request?.requestId, decision, reasonCode, ruleIds: [ruleId],
   });
+  // 무인증으로 메모 경로를 찌른 요청은 결정과 상관없이 그 경로를 다툼 중으로 표시만 합니다(이 요청 자체는 아래 규칙대로 거부됩니다).
+  if (anonymous(request) && notePath(request)) markContested(request);
+
   // 규칙 1(6단계): 등록 기기(true)만 통과합니다. false·없음·"true" 같은 값은 모두 미등록입니다.
   if (request?.deviceRegistered !== true) return answer('deny', 'device_not_registered', 'device_registered');
 
@@ -90,6 +116,12 @@ export async function decide(request) {
   const unusual = Boolean(signals) && ODD_HOURS.has(signals.hour) && signals.network === 'unusual'
     && recentBurst(request) >= BURST_COUNT;
   if (unusual && !reauthenticated(request)) return answer('step_up', 'step_up_required', 'step_up_required');
+
+  // 규칙 3-2(12단계): 다툼 중인 메모 경로는 새 로그인이 확인된 요청만 허용하고 주인으로 기록합니다. 그 밖에는 추가 확인을 요구합니다.
+  if (isContested(request)) {
+    if (!reauthenticated(request)) return answer('step_up', 'step_up_required', 'step_up_required');
+    contested.delete(ownerKey(request));
+  }
 
   rememberOwner(request);   // 허용한 메모 경로의 첫 사용자를 기록합니다.
   return { ...answer('allow', 'approved', 'device_registered') };

@@ -147,3 +147,41 @@ test('같은 메모 경로를 다른 사용자가 요청하면 거부한다(소�
   assert.equal((await decide(fresh(suspicious, { method: 'GET', route: 'GET /notes/:id', path: pending, subjectId: 'subj_x' }))).decision, 'step_up');
   assert.equal((await decide(withRoute('GET', 'GET /notes/:id', pending, { subjectId: 'subj_y' }))).decision, 'allow');
 });
+
+// 12단계 총공세: 무인증 조회와 타인 메모 조회를 연속으로 보내는 순서(「1첩반상」)
+const reauth = { stepUp: { verified: true, authAgeSeconds: 30 } };
+const read = (path, subjectId, extra = {}) => decide(withRoute('GET', 'GET /notes/:id', path, { subjectId, ...extra }));
+
+test('무인증 조회 뒤 다른 사용자가 먼저 와도 주인이 되지 못하고, 진짜 주인은 거부되지 않고 추가 확인 뒤 들어간다', async () => {
+  const path = `/notes/${randomUUID()}`;
+  const anon = await read(path, '');
+  assert.deepEqual([anon.decision, anon.reasonCode], ['deny', 'zone_not_allowed']);              // 무인증 조회 자체는 거부
+  const b = await read(path, 'subj_b');
+  assert.deepEqual([b.decision, b.reasonCode, b.ruleIds], ['step_up', 'step_up_required', ['step_up_required']]);   // 타인 조회는 허용되지 않음
+  const aFirst = await read(path, 'subj_a');
+  assert.equal(aFirst.decision, 'step_up');                                                     // 주인도 거부(deny)가 아니라 추가 확인
+  assert.equal((await read(path, 'subj_a', reauth)).decision, 'allow');                         // 새 로그인이 확인되면 허용되고 주인으로 기록
+  assert.equal((await read(path, 'subj_a')).decision, 'allow');                                 // 이후 주인의 정상 요청은 그대로 허용
+  const bAfter = await read(path, 'subj_b');
+  assert.deepEqual([bAfter.decision, bAfter.reasonCode], ['deny', 'zone_not_allowed']);         // 주인이 정해진 뒤 타인은 기존 8단계 규칙으로 거부
+});
+
+test('무인증 조회가 없으면 기존 8단계 순서(A 먼저 → B 거부)와 7단계 정상 요청이 그대로다', async () => {
+  const path = `/notes/${randomUUID()}`;
+  assert.equal((await read(path, 'subj_a')).decision, 'allow');
+  assert.equal((await read(path, '')).decision, 'deny');                                        // 주인이 있는 경로의 무인증 조회
+  assert.equal((await read(path, 'subj_b')).decision, 'deny');                                  // 다툼 표시 없이 기존 소유 기록으로 거부
+  assert.equal((await read(path, 'subj_a')).decision, 'allow');
+  assert.equal((await decide(fresh(normal))).decision, 'allow');                                // 7단계 정상 요청(/notes/demo)
+  assert.equal((await decide(fresh(suspicious))).decision, 'step_up');                          // 7단계 복합 이상
+});
+
+test('미등록 기기의 무인증 조회도 6단계 규칙으로 먼저 거부되고, 다른 경로에는 영향이 없다', async () => {
+  const path = `/notes/${randomUUID()}`;
+  const other = `/notes/${randomUUID()}`;
+  const res = await read(path, '', { deviceRegistered: false });
+  assert.deepEqual([res.decision, res.reasonCode], ['deny', 'device_not_registered']);
+  assert.equal((await read(other, 'subj_c')).decision, 'allow');                                // 다툼 표시는 그 경로에만
+  assert.equal((await read(path, 'subj_c')).decision, 'step_up');
+  for (const response of [res]) assert.ok(response.ruleIds.every(id => RULE_IDS.includes(id)));
+});
