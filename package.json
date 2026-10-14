@@ -21,7 +21,8 @@
     "fixture:7": "node scripts/fixture-7.mjs",
     "xdr:run": "node scripts/xdr-run.mjs",
     "xdr:respond": "node xdr/brute-force/respond.mjs",
-    "xdr:respond:web": "node xdr/web-injection/respond.mjs"
+    "xdr:respond:web": "node xdr/web-injection/respond.mjs",
+    "xdr:respond:cve": "node xdr/known-cve/respond.mjs"
   },
   "engines": {
     "node": ">=22"

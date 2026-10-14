@@ -1,0 +1,87 @@
+{
+  "schema": "aleph.xdr.deny-rules.v1",
+  "moduleKey": "known-cve",
+  "ruleId": "xdr_known_cve_block",
+  "blockMinutes": 60,
+  "rules": [
+    {
+      "address": "203.0.113.10",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-01",
+        "kc-02"
+      ],
+      "since": "2026-09-27T09:14:02+09:00",
+      "expiresAt": "2026-09-27T01:14:18.000Z"
+    },
+    {
+      "address": "198.51.100.16",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-03"
+      ],
+      "since": "2026-09-27T09:17:06+09:00",
+      "expiresAt": "2026-09-27T01:17:06.000Z"
+    },
+    {
+      "address": "192.0.2.16",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-04"
+      ],
+      "since": "2026-09-27T10:04:22+09:00",
+      "expiresAt": "2026-09-27T02:04:22.000Z"
+    },
+    {
+      "address": "203.0.113.24",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-05"
+      ],
+      "since": "2026-09-27T10:21:09+09:00",
+      "expiresAt": "2026-09-27T02:21:09.000Z"
+    },
+    {
+      "address": "198.51.100.24",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-06"
+      ],
+      "since": "2026-09-27T11:08:41+09:00",
+      "expiresAt": "2026-09-27T03:08:41.000Z"
+    },
+    {
+      "address": "192.0.2.24",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-07"
+      ],
+      "since": "2026-09-27T13:06:15+09:00",
+      "expiresAt": "2026-09-27T05:06:15.000Z"
+    },
+    {
+      "address": "203.0.113.31",
+      "decision": "deny",
+      "reasonCode": "xdr_known_cve",
+      "ruleId": "xdr_known_cve_block",
+      "alertIds": [
+        "kc-08"
+      ],
+      "since": "2026-09-27T14:19:03+09:00",
+      "expiresAt": "2026-09-27T06:19:03.000Z"
+    }
+  ],
+  "skipped": []
+}

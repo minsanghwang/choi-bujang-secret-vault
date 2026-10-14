@@ -1,0 +1,25 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "known-cve",
+  "source": "CVE-2021-44228 Log4Shell (https://nvd.nist.gov/vuln/detail/CVE-2021-44228) · MITRE ATT&CK T1190 Exploit Public-Facing Application (https://attack.mitre.org/techniques/T1190/)",
+  "patterns": [
+    {
+      "name": "jndi_lookup",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 요청 머리글이나 주소 인자 안에 완전한 원격 조회 구문(${jndi:ldap://…} 처럼 jndi 뒤에 ldap·ldaps·rmi·dns 같은 방식과 ://가 이어진 꼴)이 들어 있음. 이 꼴이 있으면 뚜렷한 신호",
+      "evidence": "CVE-2021-44228 · MITRE ATT&CK T1190: 로그에 기록되는 문자열 속 ${jndi:…://…} 조회 구문이 서버가 외부 코드를 내려받아 실행하게 만드는 Log4Shell 악용 형태다."
+    },
+    {
+      "name": "jndi_obfuscated",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 요청 안에 ${${lower:j}ndi:ldap://… 처럼 글자를 쪼개 감춘 원격 조회 구문이나 %24%7Bjndi: 처럼 주소 부호화된 꼴이 들어 있음. 감춘 꼴도 완전한 구문이면 뚜렷한 신호",
+      "evidence": "CVE-2021-44228 · MITRE ATT&CK T1190: 탐지를 피하려고 jndi 글자를 쪼개거나 부호화해도 같은 Log4Shell 악용 형태다."
+    },
+    {
+      "name": "known_scanner_trace",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 설명이나 요청 머리글에 알려진 취약점 점검 도구의 흔적(점검 흔적, nuclei, zgrab, log4j-scan 같은 이름)이 있음. 이 흔적만으로는 약한 신호이고 완전한 조회 구문과 함께 있을 때만 확신도를 더함",
+      "evidence": "MITRE ATT&CK T1190: 공개 앱을 악용하기 전에 취약점 점검 도구(CVE-2021-44228 점검용 포함)가 요청에 남기는 흔적은 악용 시도의 앞 신호다."
+    }
+  ]
+}

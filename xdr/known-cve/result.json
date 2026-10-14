@@ -1,0 +1,155 @@
+{
+  "schema": "aleph.xdr.result.v1",
+  "moduleKey": "known-cve",
+  "decisions": [
+    {
+      "alertId": "kc-01",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 횟수 없음 · 수준 13"
+    },
+    {
+      "alertId": "kc-02",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "kc-03",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 6번 · 수준 12"
+    },
+    {
+      "alertId": "kc-04",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 4번 · 수준 13"
+    },
+    {
+      "alertId": "kc-05",
+      "action": "block",
+      "confidence": 0.95,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated + known_scanner_trace · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "kc-06",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 8번 · 수준 11"
+    },
+    {
+      "alertId": "kc-07",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 횟수 없음 · 수준 12"
+    },
+    {
+      "alertId": "kc-08",
+      "action": "block",
+      "confidence": 0.9,
+      "reason": "근거 패턴: jndi_lookup + jndi_obfuscated · 반복 횟수 없음 · 수준 10"
+    },
+    {
+      "alertId": "kc-09",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 6"
+    },
+    {
+      "alertId": "kc-10",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 5"
+    },
+    {
+      "alertId": "kc-11",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 7"
+    },
+    {
+      "alertId": "kc-12",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 6"
+    },
+    {
+      "alertId": "kc-13",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 5"
+    },
+    {
+      "alertId": "kc-14",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 7"
+    },
+    {
+      "alertId": "kc-15",
+      "action": "alert",
+      "confidence": 0.5,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 1번 · 수준 6"
+    },
+    {
+      "alertId": "kc-16",
+      "action": "alert",
+      "confidence": 0.6,
+      "reason": "근거 패턴: 완전한 원격 조회 구문 없음 · 반복 2번 · 수준 8"
+    },
+    {
+      "alertId": "kc-17",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-18",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-19",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-20",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-21",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-22",
+      "action": "record",
+      "confidence": 0.1,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-23",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    },
+    {
+      "alertId": "kc-24",
+      "action": "record",
+      "confidence": 0.15,
+      "reason": "패턴 해당 없음(T1190 표시 없는 정상 이벤트)"
+    }
+  ],
+  "counts": {
+    "block": 8,
+    "alert": 8,
+    "record": 8
+  }
+}

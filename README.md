@@ -25,6 +25,17 @@
 | 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- web-injection` → `block 8 · alert 9 · record 9`(wi-01~08 반복된 주입, wi-09~17 한 번뿐인 표기, wi-18~26 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:web` → 거부 규칙 7개(근거 경보 8건), 다시 흘리기: 명확한 공격 막힘 8/8 · 애매한 시도 0 · 정상 이벤트 0 |
 | 시험 | `node --test test/xdr-web-injection.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
 
+## 보너스 xdr-03 「알려진 취약점 악용을 잡아 냅니다」
+
+| 항목 | 내용 |
+| --- | --- |
+| 경보 읽기 | `xdr/known-cve/read-alerts.mjs`(확인용, `decide.mjs`가 불러오지 않음): `xdr/fixtures/known-cve.json`에서 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 값은 가립니다. 실행 `node xdr/known-cve/read-alerts.mjs` → `경보 24건 · 뽑은 줄 24줄 · 같음` |
+| 패턴 목록 | `xdr/known-cve/patterns.json`: CVE-2021-44228 · MITRE ATT&CK T1190 근거의 세 패턴. `jndi_lookup`(완전한 `${jndi:ldap://…}` 구문), `jndi_obfuscated`(글자를 쪼개거나 부호화해 감춘 같은 구문), `known_scanner_trace`(점검 도구 흔적, 약한 신호). 패턴마다 근거 한 줄 |
+| 판단 모듈 | `xdr/known-cve/decide.mjs`: 패턴을 파일 맨 위 상수로 옮겨 적고 `decide(alert)` 하나를 내보냅니다. **import·파일 읽기/쓰기·네트워크 없음.** T1190 표시가 없으면 `record`. **완전한 원격 조회 구문이 있을 때만** 기본 0.5에 0.35를 더해 `block`(0.85 이상)에 닿고, 머리글·주소 양쪽 / 5번 이상 반복 / 점검 흔적 / 수준 12 이상이면 더합니다. 단어·조각·이름만 있으면 0.84를 넘지 않아 `alert`까지만 갑니다. 주소 부호화(`%24%7Bjndi:`)는 풀어서 봅니다 |
+| 알림과 차단 | `xdr/known-cve/respond.mjs`(`npm run xdr:respond:cve`): `block`만 출발 주소별 거부 규칙(`xdr/known-cve/deny-rules.json`, 규칙 `xdr_known_cve_block`, 근거 경보 번호, 60분 뒤 만료)으로 내보내고, `block`·`alert`를 `xdr/alerts.log`에 한 줄씩 쌓습니다(요청 주소 문자열은 쓰지 않음). 정상 기록이 있는 주소는 규칙에 넣지 않습니다. 판정기 연결 방식은 xdr-01과 같습니다(`checkAddress`, 판정기 코드는 그대로, 실제 엔진 연결은 이 저장소에서 확인하지 않았습니다) |
+| 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- known-cve` → `block 8 · alert 8 · record 8`(kc-01~08 완전한 구문, kc-09~16 단어·조각뿐, kc-17~24 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:cve` → 거부 규칙 7개(근거 경보 8건), 다시 흘리기: 명확한 공격 막힘 8/8 · 애매한 시도 0 · 정상 이벤트 0 |
+| 시험 | `node --test test/xdr-known-cve.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
+
 ## 12단계 탈환 작전실 요약 (서비스·경로)
 
 | 항목 | 내용 |
