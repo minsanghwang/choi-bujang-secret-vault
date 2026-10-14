@@ -14,6 +14,17 @@
 | 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- brute-force` → `block 10 · alert 9 · record 9`(bf-01~10 명확한 공격, bf-11~19 애매한 시도, bf-20~28 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond` → 거부 규칙 9개(근거 경보 10건), 다시 흘리기: 명확한 공격 막힘 10/10 · 애매한 시도 막힘 0 · 정상 이벤트 막힘 0 |
 | 시험 | `node --test test/xdr-brute-force.test.mjs`(로컬 시험 경보, 심판 판정 아님). 심판은 격리 환경에서 `decide.mjs` 한 파일만 다시 불러 결과를 봅니다 |
 
+## 보너스 xdr-02 「웹 주입 공격을 잡아 냅니다」
+
+| 항목 | 내용 |
+|---|---|
+| 경보 읽기 | `xdr/web-injection/read-alerts.mjs`(확인용, `decide.mjs`가 불러오지 않음): `xdr/fixtures/web-injection.json`에서 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 값은 가립니다. 실행 `node xdr/web-injection/read-alerts.mjs` → `경보 26건 · 뽑은 줄 26줄 · 같음` |
+| 패턴 목록 | `xdr/web-injection/patterns.json`: MITRE ATT&CK T1190 근거의 네 패턴. `sql_injection`(요청 인자 안 SQL 구문), `script_injection`(스크립트 태그·삽입 표식), `path_traversal`(`../` 반복), `command_separator`(명령 구분자). 패턴마다 근거 한 줄 |
+| 판단 모듈 | `xdr/web-injection/decide.mjs`: 패턴을 파일 맨 위 상수로 옮겨 적고 `decide(alert)` 하나를 내보냅니다. **import·파일 읽기/쓰기·네트워크 없음.** T1190 표시가 없으면 `record`. T1190이면 기본 0.5에 같은 주소 반복 횟수(2·5·10번 이상)와 규칙 수준(8·10·12 이상)을 더합니다. **주입 표기가 있고 5번 이상 반복된 경우만** `block`(0.85 이상)까지 가고, 한 번뿐인 표기(수업명 "select", "SQL 공지" 등)는 `alert`까지만 갑니다 |
+| 알림과 차단 | `xdr/web-injection/respond.mjs`(`npm run xdr:respond:web`): `block`만 출발 주소별 거부 규칙(`xdr/web-injection/deny-rules.json`, 규칙 `xdr_web_injection_block`, 근거 경보 번호, 60분 뒤 만료)으로 내보내고, `block`·`alert`를 `xdr/alerts.log`에 한 줄씩 쌓습니다(요청 주소 문자열은 쓰지 않음, 같은 경보는 다시 쓰지 않음). 정상 기록이 있는 주소는 규칙에 넣지 않습니다. 판정기 연결 방식은 xdr-01과 같습니다(`checkAddress`, 판정기 코드는 그대로) |
+| 실행 결과 (2026-10-14, 로컬) | `npm run xdr:run -- web-injection` → `block 8 · alert 9 · record 9`(wi-01~08 반복된 주입, wi-09~17 한 번뿐인 표기, wi-18~26 정상 이벤트). 정상 이벤트를 `block`한 경우 0건. `npm run xdr:respond:web` → 거부 규칙 7개(근거 경보 8건), 다시 흘리기: 명확한 공격 막힘 8/8 · 애매한 시도 0 · 정상 이벤트 0 |
+| 시험 | `node --test test/xdr-web-injection.test.mjs`(로컬 시험 경보, 심판 판정 아님) |
+
 ## 12단계 탈환 작전실 요약 (서비스·경로)
 
 | 항목 | 내용 |

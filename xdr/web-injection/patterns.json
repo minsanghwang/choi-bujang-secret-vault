@@ -1,0 +1,31 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "web-injection",
+  "source": "MITRE ATT&CK T1190 Exploit Public-Facing Application (https://attack.mitre.org/techniques/T1190/)",
+  "patterns": [
+    {
+      "name": "sql_injection",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 요청 인자 안에 SQL 구문(select·union·or 조건 이어 붙이기, 데이터베이스 조회 표기)이 들어 있음. 같은 주소에서 5번 이상 반복되면 뚜렷한 신호, 1번뿐이면 약한 신호",
+      "evidence": "MITRE ATT&CK T1190 Exploit Public-Facing Application: 외부에 공개된 웹 앱의 약점을 노리며, SQL 주입이 대표적인 예다."
+    },
+    {
+      "name": "script_injection",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 요청 인자 안에 스크립트 태그나 스크립트 삽입 표식이 들어 있음. 같은 주소에서 5번 이상 반복되면 뚜렷한 신호",
+      "evidence": "MITRE ATT&CK T1190 Exploit Public-Facing Application: 공개된 웹 앱의 입력 검증 약점을 노려 요청에 실행 코드를 넣는다."
+    },
+    {
+      "name": "path_traversal",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 요청 인자 안에 경로 거슬러 올라가기(../) 표기가 반복되어 공개 범위 밖의 파일을 노림. 같은 주소에서 5번 이상 반복되면 뚜렷한 신호",
+      "evidence": "MITRE ATT&CK T1190 Exploit Public-Facing Application: 공개된 웹 앱의 경로 처리 약점을 노려 허용되지 않은 파일에 접근한다."
+    },
+    {
+      "name": "command_separator",
+      "technique": "T1190",
+      "condition": "경보에 T1190이 표시되고, 요청 인자 안에 명령 구분자(; | && 같은 꼴)를 넣어 서버 명령을 이어 붙이려 함. 같은 주소에서 5번 이상 반복되면 뚜렷한 신호",
+      "evidence": "MITRE ATT&CK T1190 Exploit Public-Facing Application: 공개된 웹 앱의 입력을 통해 서버 쪽 명령 실행을 노린다."
+    }
+  ]
+}

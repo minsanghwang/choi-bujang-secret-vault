@@ -1,0 +1,87 @@
+{
+  "schema": "aleph.xdr.deny-rules.v1",
+  "moduleKey": "web-injection",
+  "ruleId": "xdr_web_injection_block",
+  "blockMinutes": 60,
+  "rules": [
+    {
+      "address": "203.0.113.10",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-01",
+        "wi-02"
+      ],
+      "since": "2026-09-27T09:13:01+09:00",
+      "expiresAt": "2026-09-27T01:13:20.000Z"
+    },
+    {
+      "address": "198.51.100.15",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-03"
+      ],
+      "since": "2026-09-27T09:16:04+09:00",
+      "expiresAt": "2026-09-27T01:16:04.000Z"
+    },
+    {
+      "address": "192.0.2.15",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-04"
+      ],
+      "since": "2026-09-27T10:02:11+09:00",
+      "expiresAt": "2026-09-27T02:02:11.000Z"
+    },
+    {
+      "address": "203.0.113.18",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-05"
+      ],
+      "since": "2026-09-27T10:18:33+09:00",
+      "expiresAt": "2026-09-27T02:18:33.000Z"
+    },
+    {
+      "address": "198.51.100.18",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-06"
+      ],
+      "since": "2026-09-27T11:07:08+09:00",
+      "expiresAt": "2026-09-27T03:07:08.000Z"
+    },
+    {
+      "address": "192.0.2.21",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-07"
+      ],
+      "since": "2026-09-27T13:04:19+09:00",
+      "expiresAt": "2026-09-27T05:04:19.000Z"
+    },
+    {
+      "address": "203.0.113.22",
+      "decision": "deny",
+      "reasonCode": "xdr_web_injection",
+      "ruleId": "xdr_web_injection_block",
+      "alertIds": [
+        "wi-08"
+      ],
+      "since": "2026-09-27T14:26:02+09:00",
+      "expiresAt": "2026-09-27T06:26:02.000Z"
+    }
+  ],
+  "skipped": []
+}
